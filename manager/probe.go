@@ -63,16 +63,17 @@ func (pip ProbeIdentificationPair) Matches(id ProbeIdentificationPair) bool {
 // Probe - Main eBPF probe wrapper. This structure is used to store the required data to attach a loaded eBPF
 // program to its hook point.
 type Probe struct {
-	manager          *Manager
-	program          *ebpf.Program
-	programSpec      *ebpf.ProgramSpec
-	perfEventFD      *internal.FD
-	state            state
-	stateLock        sync.RWMutex
-	manualLoadNeeded bool
-	checkPin         bool
-	funcName         string
-	attachPID        int
+	manager           *Manager
+	program           *ebpf.Program
+	programSpec       *ebpf.ProgramSpec
+	perfEventFD       *internal.FD
+	state             state
+	stateLock         sync.RWMutex
+	manualLoadNeeded  bool
+	checkPin          bool
+	funcName          string
+	attachPID         int
+	attachedWithSysfs bool
 
 	// lastError - stores the last error that the probe encountered, it is used to surface a more useful error message
 	// when one of the validators (see Options.ActivatedProbes) fails.
@@ -532,15 +533,25 @@ func (p *Probe) reset() {
 	p.checkPin = false
 	p.funcName = ""
 	p.attachPID = 0
+	p.attachedWithSysfs = false
 }
 
 // attachKprobe - Attaches the probe to its kprobe
 func (p *Probe) attachKprobe() error {
 	// Prepare kprobe_events line parameters
-	var probeType, maxactiveStr string
+	var probeType, maxactiveStr, sectionPrefix string
 	var err error
 	funcName := p.funcName
-	if strings.HasPrefix(p.Section, "kretprobe/") {
+
+	dividedSection := strings.Split(p.Section, "/")
+	if len(dividedSection) >= 1 {
+		sectionPrefix = dividedSection[0]
+	} else {
+		return errors.Wrapf(ErrSectionFormat, "program type unrecognized in section %v", p.Section)
+	}
+
+	switch sectionPrefix {
+	case "kretprobe":
 		if funcName == "" {
 			funcName = strings.TrimPrefix(p.Section, "kretprobe/")
 		}
@@ -548,30 +559,42 @@ func (p *Probe) attachKprobe() error {
 			maxactiveStr = fmt.Sprintf("%d", p.KProbeMaxActive)
 		}
 		probeType = "r"
-	} else if strings.HasPrefix(p.Section, "kprobe/") {
+	case "kprobe":
 		if funcName == "" {
 			funcName = strings.TrimPrefix(p.Section, "kprobe/")
 		}
 		probeType = "p"
-	} else {
+	default:
 		// this might actually be a Uprobe
 		return p.attachUprobe()
 	}
 	p.attachPID = os.Getpid()
 
-	// Write kprobe_events line to register kprobe
-	kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
-	// fallback without KProbeMaxActive
-	if err == ErrKprobeIDNotExist {
-		kprobeID, err = EnableKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
-	}
+	// Try to use the perf_event_open API first (e12f03d "perf/core: Implement the 'perf_kprobe' PMU")
+	perfEventFD, err := perfEventOpenWithProbe(funcName, 0, -1, sectionPrefix, 0)
 	if err != nil {
-		return errors.Wrapf(err, "couldn't enable kprobe %s", p.Section)
+		// Try to create the event using debugfs
+		// Write kprobe_events line to register kprobe
+		kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
+		// fallback without KProbeMaxActive
+		if err == ErrKprobeIDNotExist {
+			kprobeID, err = EnableKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
+		}
+		if err != nil {
+			return errors.Wrapf(err, "couldn't enable kprobe %s", p.Section)
+		}
+		p.attachedWithSysfs = true
+
+		// create perf event FD
+		perfEventFD, err = perfEventOpenTracingEvent(kprobeID)
 	}
 
-	// Activate perf event
-	p.perfEventFD, err = perfEventOpenTracepoint(kprobeID, p.program.FD())
-	return errors.Wrapf(err, "couldn't enable kprobe %s", p.GetIdentificationPair())
+	// enable program
+	if ioctlPerfEventEnable(perfEventFD, p.program.FD()) != nil {
+		return errors.Wrapf(err, "couldn't enable perf event %s", p.GetIdentificationPair())
+	}
+	p.perfEventFD = internal.NewFD(uint32(perfEventFD))
+	return nil
 }
 
 // detachKprobe - Detaches the probe from its kprobe
@@ -592,6 +615,11 @@ func (p *Probe) detachKprobe() error {
 	} else {
 		// this might be a Uprobe
 		return p.detachUprobe()
+	}
+
+	if !p.attachedWithSysfs {
+		// nothing to do
+		return nil
 	}
 
 	// Write kprobe_events line to remove hook point
@@ -615,25 +643,40 @@ func (p *Probe) attachTracepoint() error {
 	}
 
 	// Hook the eBPF program to the tracepoint
-	p.perfEventFD, err = perfEventOpenTracepoint(tracepointID, p.program.FD())
-	return errors.Wrapf(err, "couldn't enable tracepoint %s", p.GetIdentificationPair())
+	perfEventFD, err := perfEventOpenTracingEvent(tracepointID)
+	if err != nil {
+		return errors.Wrapf(err, "couldn't enable tracepoint %s", p.GetIdentificationPair())
+	}
+	if ioctlPerfEventEnable(perfEventFD, p.program.FD()) != nil {
+		return errors.Wrapf(err, "couldn't enable perf event %s", p.GetIdentificationPair())
+	}
+	p.perfEventFD = internal.NewFD(uint32(perfEventFD))
+	return nil
 }
 
 // attachUprobe - Attaches the probe to its Uprobe
 func (p *Probe) attachUprobe() error {
-	p.attachPID = os.Getpid()
+	var probeType, funcName, sectionPrefix string
+	dividedSection := strings.Split(p.Section, "/")
+	if len(dividedSection) >= 1 {
+		sectionPrefix = dividedSection[0]
+	} else {
+		return errors.Wrapf(ErrSectionFormat, "program type unrecognized in section %v", p.Section)
+	}
+
 	// Prepare uprobe_events line parameters
-	var probeType, funcName string
-	if strings.HasPrefix(p.Section, "uretprobe/") {
+	switch sectionPrefix {
+	case "uretprobe":
 		funcName = strings.TrimPrefix(p.Section, "uretprobe/")
 		probeType = "r"
-	} else if strings.HasPrefix(p.Section, "uprobe/") {
+	case "uprobe":
 		funcName = strings.TrimPrefix(p.Section, "uprobe/")
 		probeType = "p"
-	} else {
+	default:
 		// unknown type
 		return errors.Wrapf(ErrSectionFormat, "program type unrecognized in section %v", p.Section)
 	}
+	p.attachPID = os.Getpid()
 
 	// compute the offset if it was not provided
 	if p.UprobeOffset == 0 {
@@ -657,19 +700,35 @@ func (p *Probe) attachUprobe() error {
 		p.funcName = offsets[0].Name
 	}
 
-	// enable uprobe
-	uprobeID, err := EnableUprobeEvent(probeType, p.funcName, p.BinaryPath, p.UID, p.attachPID, p.UprobeOffset)
+	// Try to use the perf_event_open API first (e12f03d "perf/core: Implement the 'perf_kprobe' PMU")
+	perfEventFD, err := perfEventOpenWithProbe(p.BinaryPath, int(p.UprobeOffset), -1, sectionPrefix, 0)
 	if err != nil {
-		return errors.Wrapf(err, "couldn't enable uprobe %s", p.Section)
+		// Try to create the event using debugfs
+		uprobeID, err := EnableUprobeEvent(probeType, p.funcName, p.BinaryPath, p.UID, p.attachPID, p.UprobeOffset)
+		if err != nil {
+			return errors.Wrapf(err, "couldn't enable uprobe %s", p.Section)
+		}
+
+		// Activate perf event
+		perfEventFD, err = perfEventOpenTracingEvent(uprobeID)
+		p.attachedWithSysfs = true
 	}
 
-	// Activate perf event
-	p.perfEventFD, err = perfEventOpenTracepoint(uprobeID, p.program.FD())
-	return errors.Wrapf(err, "couldn't enable uprobe %s", p.GetIdentificationPair())
+	// enable perf event
+	if ioctlPerfEventEnable(perfEventFD, p.program.FD()) != nil {
+		return errors.Wrapf(err, "couldn't enable perf event %s", p.GetIdentificationPair())
+	}
+	p.perfEventFD = internal.NewFD(uint32(perfEventFD))
+	return nil
 }
 
 // detachUprobe - Detaches the probe from its Uprobe
 func (p *Probe) detachUprobe() error {
+	if !p.attachedWithSysfs {
+		// nothing to do
+		return nil
+	}
+
 	// Prepare uprobe_events line parameters
 	var probeType string
 	if strings.HasPrefix(p.Section, "uretprobe/") {

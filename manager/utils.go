@@ -425,3 +425,123 @@ func GetTracepointID(category, name string) (int, error) {
 	}
 	return tracepointID, nil
 }
+
+// KProbePMUType is used to cache the KProbe PMU type
+var KProbePMUType uint32
+
+// UProbePMUType is used to cache the UProbe PMU type
+var UProbePMUType uint32
+
+// FindPMUType returns the PMU type of the provided event type
+// This function tries to use /sys/bus/event_source/devices/%s/type.
+func FindPMUType(eventType string) (uint32, error) {
+	switch eventType {
+	case "kprobe", "kretprobe":
+		if KProbePMUType != 0 {
+			return KProbePMUType, nil
+		}
+		if eventType == "kretprobe" {
+			eventType = "kprobe"
+		}
+	case "uprobe", "uretprobe":
+		if UProbePMUType != 0 {
+			return UProbePMUType, nil
+		}
+		if eventType == "uretprobe" {
+			eventType = "uprobe"
+		}
+	default:
+		return 0, errors.Errorf("no PMU type for %s", eventType)
+	}
+
+	PMUTypeFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/type", eventType)
+	typeBytes, err := ioutil.ReadFile(PMUTypeFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			PMUType, err := strconv.Atoi(strings.TrimSpace(string(typeBytes)))
+			if err != nil {
+				return 0, err
+			}
+
+			switch eventType {
+			case "kprobe":
+				KProbePMUType = uint32(PMUType)
+			case "uprobe":
+				UProbePMUType = uint32(PMUType)
+			}
+			return uint32(PMUType), nil
+		}
+	}
+
+	// sysfs might not be mounted, return default values
+	switch eventType {
+	case "kprobe":
+		return 6, nil
+	case "uprobe":
+		return 7, nil
+	}
+	return 0, errors.Errorf("no PMU type for %s", eventType)
+}
+
+// KRetProbeBit is used to cache the KRetProbe bit
+var KRetProbeBit uint32
+
+// URetProbeBit is used to cache the URetProbe bit
+var URetProbeBit uint32
+
+// FindRetProbeBit returns the retprobe bit of the provided event type
+// This function relies on /sys/bus/event_source/devices/%s/format/retprobe.
+func FindRetProbeBit(eventType string) (uint32, error) {
+	switch eventType {
+	case "kprobe", "kretprobe":
+		if KRetProbeBit != 0 {
+			return KRetProbeBit, nil
+		}
+		if eventType == "kretprobe" {
+			eventType = "kprobe"
+		}
+	case "uprobe", "uretprobe":
+		if URetProbeBit != 0 {
+			return URetProbeBit, nil
+		}
+		if eventType == "uretprobe" {
+			eventType = "uprobe"
+		}
+	default:
+		return 0, errors.Errorf("no retprobe bit for %s", eventType)
+	}
+
+	var bit int
+	retProbeFormatFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/format/retprobe", eventType)
+	format, err := ioutil.ReadFile(retProbeFormatFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			// parse int after "config:"
+			if len(format) < 7 {
+				return 0, errors.New("invalid retprobe format")
+			}
+
+			bit, err = strconv.Atoi(strings.TrimSpace(string(format[7:])))
+			if err != nil {
+				return 0, err
+			}
+
+			switch eventType {
+			case "kprobe":
+				KRetProbeBit = uint32(bit)
+			case "uprobe":
+				URetProbeBit = uint32(bit)
+			}
+			return uint32(bit), nil
+		}
+	}
+
+	// sysfs might not be mounted, return default values
+	switch eventType {
+	case "kprobe":
+		return 0, nil
+	case "uprobe":
+		return 0, nil
+	}
+	return 0, errors.Errorf("no retprobe bit for %s", eventType)
+}
