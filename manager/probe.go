@@ -63,17 +63,17 @@ func (pip ProbeIdentificationPair) Matches(id ProbeIdentificationPair) bool {
 // Probe - Main eBPF probe wrapper. This structure is used to store the required data to attach a loaded eBPF
 // program to its hook point.
 type Probe struct {
-	manager           *Manager
-	program           *ebpf.Program
-	programSpec       *ebpf.ProgramSpec
-	perfEventFD       *internal.FD
-	state             state
-	stateLock         sync.RWMutex
-	manualLoadNeeded  bool
-	checkPin          bool
-	funcName          string
-	attachPID         int
-	attachedWithSysfs bool
+	manager             *Manager
+	program             *ebpf.Program
+	programSpec         *ebpf.ProgramSpec
+	perfEventFD         *internal.FD
+	state               state
+	stateLock           sync.RWMutex
+	manualLoadNeeded    bool
+	checkPin            bool
+	funcName            string
+	attachPID           int
+	attachedWithDebugFS bool
 
 	// lastError - stores the last error that the probe encountered, it is used to surface a more useful error message
 	// when one of the validators (see Options.ActivatedProbes) fails.
@@ -533,7 +533,7 @@ func (p *Probe) reset() {
 	p.checkPin = false
 	p.funcName = ""
 	p.attachPID = 0
-	p.attachedWithSysfs = false
+	p.attachedWithDebugFS = false
 }
 
 // attachKprobe - Attaches the probe to its kprobe
@@ -575,15 +575,15 @@ func (p *Probe) attachKprobe() error {
 	if err != nil {
 		// Try to create the event using debugfs
 		// Write kprobe_events line to register kprobe
-		kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
+		kprobeID, err := registerKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
 		// fallback without KProbeMaxActive
 		if err == ErrKprobeIDNotExist {
-			kprobeID, err = EnableKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
+			kprobeID, err = registerKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "couldn't enable kprobe %s", p.Section)
 		}
-		p.attachedWithSysfs = true
+		p.attachedWithDebugFS = true
 
 		// create perf event FD
 		perfEventFD, err = perfEventOpenTracingEvent(kprobeID)
@@ -617,13 +617,13 @@ func (p *Probe) detachKprobe() error {
 		return p.detachUprobe()
 	}
 
-	if !p.attachedWithSysfs {
+	if !p.attachedWithDebugFS {
 		// nothing to do
 		return nil
 	}
 
 	// Write kprobe_events line to remove hook point
-	return DisableKprobeEvent(probeType, funcName, p.UID, p.attachPID)
+	return unregisterKprobeEvent(probeType, funcName, p.UID, p.attachPID)
 }
 
 // attachTracepoint - Attaches the probe to its tracepoint
@@ -704,14 +704,14 @@ func (p *Probe) attachUprobe() error {
 	perfEventFD, err := perfEventOpenWithProbe(p.BinaryPath, int(p.UprobeOffset), -1, sectionPrefix, 0)
 	if err != nil {
 		// Try to create the event using debugfs
-		uprobeID, err := EnableUprobeEvent(probeType, p.funcName, p.BinaryPath, p.UID, p.attachPID, p.UprobeOffset)
+		uprobeID, err := registerUprobeEvent(probeType, p.funcName, p.BinaryPath, p.UID, p.attachPID, p.UprobeOffset)
 		if err != nil {
 			return errors.Wrapf(err, "couldn't enable uprobe %s", p.Section)
 		}
 
 		// Activate perf event
 		perfEventFD, err = perfEventOpenTracingEvent(uprobeID)
-		p.attachedWithSysfs = true
+		p.attachedWithDebugFS = true
 	}
 
 	// enable perf event
@@ -724,7 +724,7 @@ func (p *Probe) attachUprobe() error {
 
 // detachUprobe - Detaches the probe from its Uprobe
 func (p *Probe) detachUprobe() error {
-	if !p.attachedWithSysfs {
+	if !p.attachedWithDebugFS {
 		// nothing to do
 		return nil
 	}
@@ -741,7 +741,7 @@ func (p *Probe) detachUprobe() error {
 	}
 
 	// Write uprobe_events line to remove hook point
-	return DisableUprobeEvent(probeType, p.funcName, p.UID, p.attachPID)
+	return unregisterUprobeEvent(probeType, p.funcName, p.UID, p.attachPID)
 }
 
 // attachCGroup - Attaches the probe to a cgroup hook point
