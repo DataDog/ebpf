@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	qt "github.com/frankban/quicktest"
 
 	"github.com/DataDog/ebpf/asm"
 	"github.com/DataDog/ebpf/internal"
@@ -182,29 +183,57 @@ func TestProgramClose(t *testing.T) {
 
 func TestProgramPin(t *testing.T) {
 	prog := createSocketFilter(t)
+	c := qt.New(t)
 	defer prog.Close()
 
-	tmp, err := ioutil.TempDir("/sys/fs/bpf", "ebpf-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := tempBPFFS(t)
 
 	path := filepath.Join(tmp, "program")
 	if err := prog.Pin(path); err != nil {
 		t.Fatal(err)
 	}
+
+	pinned := prog.IsPinned()
+	c.Assert(pinned, qt.Equals, true)
+
 	prog.Close()
 
-	prog, err = LoadPinnedProgram(path)
+	prog, err := LoadPinnedProgram(path)
 	testutils.SkipIfNotSupported(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer prog.Close()
 
-	if prog.abi.Type != SocketFilter {
-		t.Error("Expected pinned program to have type SocketFilter, but got", prog.abi.Type)
+	if prog.Type() != SocketFilter {
+		t.Error("Expected pinned program to have type SocketFilter, but got", prog.Type())
+	}
+
+	if !prog.IsPinned() {
+		t.Error("Expected IsPinned to be true")
+	}
+}
+
+func TestProgramUnpin(t *testing.T) {
+	prog := createSocketFilter(t)
+	c := qt.New(t)
+	defer prog.Close()
+
+	tmp := tempBPFFS(t)
+
+	path := filepath.Join(tmp, "program")
+	if err := prog.Pin(path); err != nil {
+		t.Fatal(err)
+	}
+
+	pinned := prog.IsPinned()
+	c.Assert(pinned, qt.Equals, true)
+
+	if err := prog.Unpin(); err != nil {
+		t.Fatal("Failed to unpin program:", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("Pinned program path still exists after unpinning:", err)
 	}
 }
 
@@ -220,7 +249,7 @@ func TestProgramVerifierOutputOnError(t *testing.T) {
 		t.Fatal("Expected program to be invalid")
 	}
 
-	if strings.Index(err.Error(), "exit") == -1 {
+	if !strings.Contains(err.Error(), "exit") {
 		t.Error("No verifier output in error message")
 	}
 }
@@ -385,45 +414,12 @@ func TestProgramFromFD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prog2.Close()
-}
-
-func TestProgramAlter(t *testing.T) {
-	testutils.SkipOnOldKernel(t, "4.13", "SkSKB type")
-
-	var err error
-	var prog *Program
-	prog, err = NewProgram(&ProgramSpec{
-		Type: SkSKB,
-		Instructions: asm.Instructions{
-			asm.LoadImm(asm.R0, 0, asm.DWord),
-			asm.Return(),
-		},
-		License: "MIT",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer prog.Close()
-
-	var sockMap *Map
-	sockMap, err = NewMap(&MapSpec{
-		Type:       MapType(15), // BPF_MAP_TYPE_SOCKMAP
-		KeySize:    4,
-		ValueSize:  4,
-		MaxEntries: 2,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sockMap.Close()
-
-	if err := prog.Attach(sockMap.FD(), AttachSkSKBStreamParser, AttachFlags(0)); err != nil {
-		t.Fatal(err)
-	}
-	if err := prog.Detach(sockMap.FD(), AttachSkSKBStreamParser, AttachFlags(0)); err != nil {
-		t.Fatal(err)
-	}
+	// Both programs refer to the same fd now. Closing either of them will
+	// release the fd to the OS, which then might re-use that fd for another
+	// test. Once we close the second map we might close the re-used fd
+	// inadvertently, leading to spurious test failures.
+	// To avoid this we have to "leak" one of the programs.
+	prog2.fd.Forget()
 }
 
 func TestHaveProgTestRun(t *testing.T) {
@@ -517,6 +513,61 @@ func TestProgramRejectIncorrectByteOrder(t *testing.T) {
 	}
 }
 
+func TestProgramSpecTag(t *testing.T) {
+	arr := createArray(t)
+	defer arr.Close()
+
+	spec := &ProgramSpec{
+		Type: SocketFilter,
+		Instructions: asm.Instructions{
+			asm.LoadImm(asm.R0, -1, asm.DWord),
+			asm.LoadMapPtr(asm.R1, arr.FD()),
+			asm.Mov.Imm32(asm.R0, 0),
+			asm.Return(),
+		},
+		License: "MIT",
+	}
+
+	prog, err := NewProgram(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prog.Close()
+
+	info, err := prog.Info()
+	testutils.SkipIfNotSupported(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tag, err := spec.Tag()
+	if err != nil {
+		t.Fatal("Can't calculate tag:", err)
+	}
+
+	if tag != info.Tag {
+		t.Errorf("Calculated tag %s doesn't match kernel tag %s", tag, info.Tag)
+	}
+}
+
+func TestProgramTypeLSM(t *testing.T) {
+	prog, err := NewProgram(&ProgramSpec{
+		AttachTo:   "task_getpgid",
+		AttachType: AttachLSMMac,
+		Instructions: asm.Instructions{
+			asm.LoadImm(asm.R0, 0, asm.DWord),
+			asm.Return(),
+		},
+		License: "GPL",
+		Type:    LSM,
+	})
+	testutils.SkipIfNotSupported(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prog.Close()
+}
+
 func createProgramArray(t *testing.T) *Map {
 	t.Helper()
 
@@ -608,5 +659,26 @@ func ExampleProgram_unmarshalFromMap() {
 
 	if err := entries.Err(); err != nil {
 		panic(err)
+	}
+}
+
+func ExampleProgramSpec_Tag() {
+	spec := &ProgramSpec{
+		Type: SocketFilter,
+		Instructions: asm.Instructions{
+			asm.LoadImm(asm.R0, 0, asm.DWord),
+			asm.Return(),
+		},
+		License: "MIT",
+	}
+
+	prog, _ := NewProgram(spec)
+	info, _ := prog.Info()
+	tag, _ := spec.Tag()
+
+	if info.Tag != tag {
+		fmt.Printf("The tags don't match: %s != %s\n", info.Tag, tag)
+	} else {
+		fmt.Println("The programs are identical, tag is", tag)
 	}
 }

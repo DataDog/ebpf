@@ -4,10 +4,12 @@ package ebpf_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/DataDog/ebpf"
 )
@@ -90,11 +92,16 @@ func Example_socketELF() {
 		panic(err)
 	}
 
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
+	var objs struct {
+		Prog  *ebpf.Program `ebpf:"bpf_prog1"`
+		Stats *ebpf.Map     `ebpf:"my_map"`
+	}
+
+	if err := spec.LoadAndAssign(&objs, nil); err != nil {
 		panic(err)
 	}
-	defer coll.Close()
+	defer objs.Prog.Close()
+	defer objs.Stats.Close()
 
 	sock, err := openRawSock(*index)
 	if err != nil {
@@ -102,24 +109,12 @@ func Example_socketELF() {
 	}
 	defer syscall.Close(sock)
 
-	prog := coll.DetachProgram("bpf_prog1")
-	if prog == nil {
-		panic("no program named bpf_prog1 found")
-	}
-	defer prog.Close()
-
-	if err := syscall.SetsockoptInt(sock, syscall.SOL_SOCKET, SO_ATTACH_BPF, prog.FD()); err != nil {
+	if err := syscall.SetsockoptInt(sock, syscall.SOL_SOCKET, SO_ATTACH_BPF, objs.Prog.FD()); err != nil {
 		panic(err)
 	}
 
 	fmt.Printf("Filtering on eth index: %d\n", *index)
 	fmt.Println("Packet stats:")
-
-	protoStats := coll.DetachMap("my_map")
-	if protoStats == nil {
-		panic(fmt.Errorf("no map named my_map found"))
-	}
-	defer protoStats.Close()
 
 	for {
 		const (
@@ -132,15 +127,15 @@ func Example_socketELF() {
 		var icmp uint64
 		var tcp uint64
 		var udp uint64
-		err := protoStats.Lookup(uint32(ICMP), &icmp)
+		err := objs.Stats.Lookup(uint32(ICMP), &icmp)
 		if err != nil {
 			panic(err)
 		}
-		err = protoStats.Lookup(uint32(TCP), &tcp)
+		err = objs.Stats.Lookup(uint32(TCP), &tcp)
 		if err != nil {
 			panic(err)
 		}
-		err = protoStats.Lookup(uint32(UDP), &udp)
+		err = objs.Stats.Lookup(uint32(UDP), &udp)
 		if err != nil {
 			panic(err)
 		}
@@ -149,16 +144,23 @@ func Example_socketELF() {
 }
 
 func openRawSock(index int) (int, error) {
-	const ETH_P_ALL uint16 = 0x00<<8 | 0x03
-	sock, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, int(ETH_P_ALL))
+	sock, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, int(htons(syscall.ETH_P_ALL)))
 	if err != nil {
 		return 0, err
 	}
-	sll := syscall.SockaddrLinklayer{}
-	sll.Protocol = ETH_P_ALL
-	sll.Ifindex = index
+	sll := syscall.SockaddrLinklayer{
+		Ifindex:  index,
+		Protocol: htons(syscall.ETH_P_ALL),
+	}
 	if err := syscall.Bind(sock, &sll); err != nil {
 		return 0, err
 	}
 	return sock, nil
+}
+
+// htons converts the unsigned short integer hostshort from host byte order to network byte order.
+func htons(i uint16) uint16 {
+	b := make([]byte, 2)
+	binary.BigEndian.PutUint16(b, i)
+	return *(*uint16)(unsafe.Pointer(&b[0]))
 }

@@ -48,7 +48,10 @@ func TestEditorRewriteConstant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	progSpec := spec.Programs["socket"]
+	progSpec, ok := spec.Programs["socket"]
+	if !ok {
+		t.Fatal("unable to find program 'socket'")
+	}
 	editor := Edit(&progSpec.Instructions)
 
 	if err := editor.RewriteConstant("constant", 0x01); err != nil {
