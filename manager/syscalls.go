@@ -1,13 +1,13 @@
 package manager
 
 import (
-	"github.com/DataDog/ebpf"
-	"golang.org/x/sys/unix"
 	"syscall"
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 
+	"github.com/DataDog/ebpf"
 	"github.com/DataDog/ebpf/internal"
 )
 
@@ -17,8 +17,6 @@ import (
 func perfEventOpenWithProbe(name string, offset, pid int, sectionPrefix string, referenceCounterOffset uint64) (int, error) {
 	var err error
 	attr := unix.PerfEventAttr{
-		Sample: 1,
-		Wakeup: 1,
 		Ext2: uint64(offset), // config2 here is kprobe_addr or probe_offset
 	}
 	attr.Size = uint32(unsafe.Sizeof(attr))
