@@ -1526,7 +1526,7 @@ func cleanupKprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 
 		// remove the entry
-		cleanUpErrors = multierror.Append(cleanUpErrors, disableKprobeEvent(match[3]))
+		cleanUpErrors = multierror.Append(cleanUpErrors, unregisterKprobeEventWithEventName(match[3]))
 	}
 	return cleanUpErrors
 }
@@ -1567,7 +1567,7 @@ func cleanupUprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 
 		// remove the entry
-		cleanUpErrors = multierror.Append(cleanUpErrors, disableUprobeEvent(match[3]))
+		cleanUpErrors = multierror.Append(cleanUpErrors, unregisterUprobeEventWithEventName(match[3]))
 	}
 	return cleanUpErrors
 }

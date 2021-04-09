@@ -196,9 +196,9 @@ func ReadKprobeEvents() (string, error) {
 	return string(kprobeEvents), nil
 }
 
-// EnableKprobeEvent - Writes a new kprobe in kprobe_events with the provided parameters. Call DisableKprobeEvent
+// registerKprobeEvent - Writes a new kprobe in kprobe_events with the provided parameters. Call DisableKprobeEvent
 // to remove the krpobe.
-func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAttachPID int) (int, error) {
+func registerKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAttachPID int) (int, error) {
 	// Generate event name
 	eventName, err := GenerateEventName(probeType, funcName, UID, kprobeAttachPID)
 	if err != nil {
@@ -233,17 +233,17 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	return kprobeID, nil
 }
 
-// DisableKprobeEvent - Removes a kprobe from kprobe_events
-func DisableKprobeEvent(probeType, funcName, UID string, kprobeAttachPID int) error {
+// unregisterKprobeEvent - Removes a kprobe from kprobe_events
+func unregisterKprobeEvent(probeType, funcName, UID string, kprobeAttachPID int) error {
 	// Generate event name
 	eventName, err := GenerateEventName(probeType, funcName, UID, kprobeAttachPID)
 	if err != nil {
 		return err
 	}
-	return disableKprobeEvent(eventName)
+	return unregisterKprobeEventWithEventName(eventName)
 }
 
-func disableKprobeEvent(eventName string) error {
+func unregisterKprobeEventWithEventName(eventName string) error {
 	// Write line to kprobe_events
 	kprobeEventsFileName := "/sys/kernel/debug/tracing/kprobe_events"
 	f, err := os.OpenFile(kprobeEventsFileName, os.O_APPEND|os.O_WRONLY, 0)
@@ -276,9 +276,9 @@ func ReadUprobeEvents() (string, error) {
 	return string(uprobeEvents), nil
 }
 
-// EnableUprobeEvent - Writes a new Uprobe in uprobe_events with the provided parameters. Call DisableUprobeEvent
+// registerUprobeEvent - Writes a new Uprobe in uprobe_events with the provided parameters. Call DisableUprobeEvent
 // to remove the krpobe.
-func EnableUprobeEvent(probeType string, funcName, path, UID string, uprobeAttachPID int, offset uint64) (int, error) {
+func registerUprobeEvent(probeType string, funcName, path, UID string, uprobeAttachPID int, offset uint64) (int, error) {
 	// Generate event name
 	eventName, err := GenerateEventName(probeType, funcName, UID, uprobeAttachPID)
 	if err != nil {
@@ -387,17 +387,17 @@ func FindSymbolOffsets(path string, pattern *regexp.Regexp) ([]elf.Symbol, error
 	return matches, nil
 }
 
-// DisableUprobeEvent - Removes a uprobe from uprobe_events
-func DisableUprobeEvent(probeType string, funcName string, UID string, uprobeAttachPID int) error {
+// unregisterUprobeEvent - Removes a uprobe from uprobe_events
+func unregisterUprobeEvent(probeType string, funcName string, UID string, uprobeAttachPID int) error {
 	// Generate event name
 	eventName, err := GenerateEventName(probeType, funcName, UID, uprobeAttachPID)
 	if err != nil {
 		return err
 	}
-	return disableUprobeEvent(eventName)
+	return unregisterUprobeEventWithEventName(eventName)
 }
 
-func disableUprobeEvent(eventName string) error {
+func unregisterUprobeEventWithEventName(eventName string) error {
 	// Write uprobe_events line
 	uprobeEventsFileName := "/sys/kernel/debug/tracing/uprobe_events"
 	f, err := os.OpenFile(uprobeEventsFileName, os.O_APPEND|os.O_WRONLY, 0)
@@ -424,4 +424,56 @@ func GetTracepointID(category, name string) (int, error) {
 		return -1, errors.Wrap(err, "invalid tracepoint id")
 	}
 	return tracepointID, nil
+}
+
+// FindPMUType returns the PMU type of the provided event type
+// This function tries to use /sys/bus/event_source/devices/%s/type.
+func FindPMUType(eventType string) (uint32, error) {
+	switch eventType {
+	case "kprobe", "kretprobe":
+		eventType = "kprobe"
+	case "uprobe", "uretprobe":
+		eventType = "uprobe"
+	default:
+		return 0, errors.Errorf("no PMU type for %s", eventType)
+	}
+
+	PMUTypeFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/type", eventType)
+	f, err := os.Open(PMUTypeFile)
+	if err != nil {
+		return 0, errors.Wrapf(err, "couldn't read %s", PMUTypeFile)
+	}
+
+	var t uint32
+	_, err = fmt.Fscanf(f, "%d\n", &t)
+	if err != nil {
+		return 0, errors.Wrap(err, "couldn't parse type")
+	}
+	return t, nil
+}
+
+// FindRetProbeBit returns the retprobe bit of the provided event type
+// This function relies on /sys/bus/event_source/devices/%s/format/retprobe.
+func FindRetProbeBit(eventType string) (uint32, error) {
+	switch eventType {
+	case "kprobe", "kretprobe":
+		eventType = "kprobe"
+	case "urpobe", "uretprobe":
+		eventType = "uprobe"
+	default:
+		return 0, errors.Errorf("no retprobe bit for %s", eventType)
+	}
+
+	retProbeFormatFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/format/retprobe", eventType)
+	f, err := os.Open(retProbeFormatFile)
+	if err != nil {
+		return 0, errors.Wrapf(err, "couldn't read %s", retProbeFormatFile)
+	}
+
+	var bit uint32
+	_, err = fmt.Fscanf(f, "config:%d\n", &bit)
+	if err != nil {
+		return 0, errors.Wrap(err, "couldn't parse retprobe bit")
+	}
+	return bit, nil
 }
