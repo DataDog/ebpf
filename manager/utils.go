@@ -208,12 +208,12 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	if err != nil {
 		return -1, err
 	}
+	if cache == nil {
+		cache = make(map[string]int)
+	}
 	if _, ok := cache[eventName]; ok {
 		debug.PrintStack()
 		log.Panic()
-	}
-	if cache == nil {
-		cache = make(map[string]int)
 	}
 	cache[eventName] = 0
 	fmt.Println(eventName)
