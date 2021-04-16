@@ -223,6 +223,7 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	kprobeEventsFileName := "/sys/kernel/debug/tracing/kprobe_events"
 	f, err := os.OpenFile(kprobeEventsFileName, os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
+		fmt.Println("ERROR", err)
 		return -1, errors.Wrap(err, "cannot open kprobe_events")
 	}
 	defer f.Close()
