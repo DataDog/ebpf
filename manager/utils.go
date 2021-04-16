@@ -209,10 +209,11 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 		return -1, err
 	}
 	if _, ok := cache[eventName]; ok {
-		fmt.Println(eventName)
 		debug.PrintStack()
 		log.Panic()
 	}
+	cache[eventName] = 0
+	fmt.Println(eventName)
 
 	// Write line to kprobe_events
 	kprobeEventsFileName := "/sys/kernel/debug/tracing/kprobe_events"
