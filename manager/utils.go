@@ -198,6 +198,8 @@ func ReadKprobeEvents() (string, error) {
 	return string(kprobeEvents), nil
 }
 
+var cache map[string]int
+
 // EnableKprobeEvent - Writes a new kprobe in kprobe_events with the provided parameters. Call DisableKprobeEvent
 // to remove the krpobe.
 func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAttachPID int) (int, error) {
@@ -206,11 +208,11 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	if err != nil {
 		return -1, err
 	}
-	if kprobeAttachPID == 0 {
+	if _, ok := cache[eventName]; ok {
+		fmt.Println(eventName)
 		debug.PrintStack()
 		log.Panic()
 	}
-	fmt.Println(eventName)
 
 	// Write line to kprobe_events
 	kprobeEventsFileName := "/sys/kernel/debug/tracing/kprobe_events"
