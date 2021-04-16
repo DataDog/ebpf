@@ -184,8 +184,10 @@ func GenerateEventName(probeType, funcName, UID string, attachPID int) (string, 
 		eventName = safeEventRegexp.ReplaceAllString(fmt.Sprintf("%s_%s_%s_%d", probeType, funcName[0:int(math.Min(10, float64(len(funcName))))], UID[0:int(math.Min(10, float64(len(funcName))))], attachPID), "_")
 	}
 	if len(eventName) > MaxEventNameLen {
+		fmt.Println("WTF")
 		return "", errors.Errorf("event name too long (kernel limit is %d): %s", MaxEventNameLen, eventName)
 	}
+	fmt.Println("FDP", eventName)
 	return eventName, nil
 }
 
