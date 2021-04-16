@@ -4,10 +4,12 @@ import (
 	"debug/elf"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math"
 	"os"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -203,6 +205,10 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	eventName, err := GenerateEventName(probeType, funcName, UID, kprobeAttachPID)
 	if err != nil {
 		return -1, err
+	}
+	if kprobeAttachPID == 0 {
+		debug.PrintStack()
+		log.Panic()
 	}
 
 	// Write line to kprobe_events

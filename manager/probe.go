@@ -558,7 +558,7 @@ func (p *Probe) attachKprobe() error {
 		return p.attachUprobe()
 	}
 	p.attachPID = os.Getpid()
-	fmt.Println(p.attachPID)
+	fmt.Println("getpid", p.attachPID)
 
 	// Write kprobe_events line to register kprobe
 	kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
