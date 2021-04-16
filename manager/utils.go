@@ -237,6 +237,8 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	kprobeIDBytes, err := ioutil.ReadFile(kprobeIDFile)
 	if err != nil {
 		fmt.Println("ERROR", err)
+		debug.PrintStack()
+		log.Panic()
 		if os.IsNotExist(err) {
 			return -1, ErrKprobeIDNotExist
 		}
