@@ -236,6 +236,7 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 	kprobeIDFile := fmt.Sprintf("/sys/kernel/debug/tracing/events/kprobes/%s/id", eventName)
 	kprobeIDBytes, err := ioutil.ReadFile(kprobeIDFile)
 	if err != nil {
+		fmt.Println("ERROR", err)
 		if os.IsNotExist(err) {
 			return -1, ErrKprobeIDNotExist
 		}
