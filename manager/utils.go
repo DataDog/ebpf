@@ -210,6 +210,7 @@ func EnableKprobeEvent(probeType, funcName, UID, maxactiveStr string, kprobeAtta
 		debug.PrintStack()
 		log.Panic()
 	}
+	fmt.Println(eventName)
 
 	// Write line to kprobe_events
 	kprobeEventsFileName := "/sys/kernel/debug/tracing/kprobe_events"
