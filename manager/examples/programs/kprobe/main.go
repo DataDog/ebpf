@@ -49,6 +49,9 @@ func main() {
 	}
 
 	logrus.Println("successfully started")
+	for id, c := range m.GetProgramsInstructionsCount() {
+		logrus.Printf("\t%s -> %d instructions", id, c)
+	}
 	logrus.Println("=> head over to /sys/kernel/debug/tracing/trace_pipe")
 	logrus.Println("=> checkout /sys/kernel/debug/tracing/kprobe_events, utimes_common might have become utimes_common.isra.0")
 	logrus.Println("=> Cmd+C to exit")

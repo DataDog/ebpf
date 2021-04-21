@@ -588,6 +588,15 @@ func (m *Manager) Stop(cleanup MapCleanupType) error {
 	return m.stop(cleanup)
 }
 
+// GetProgramsInstructionsCount - Returns a map of instructions count indexed by ProbeIdentificationPair
+func (m *Manager) GetProgramsInstructionsCount() map[string]int {
+	counts := make(map[string]int)
+	for section, spec := range m.collectionSpec.Programs {
+		counts[section] = len(spec.Instructions)
+	}
+	return counts
+}
+
 func (m *Manager) stop(cleanup MapCleanupType) error {
 	var err error
 

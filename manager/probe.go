@@ -217,6 +217,14 @@ func (p *Probe) IsInitialized() bool {
 	return p.state >= initialized
 }
 
+// GetInstructionsCount - Returns the eBPF program instruction count
+func (p *Probe) GetInstructionsCount() int {
+	if p.programSpec != nil {
+		return len(p.programSpec.Instructions)
+	}
+	return 0
+}
+
 // Test - Triggers the probe with the provided test data. Returns the length of the output, the raw output or an error.
 func (p *Probe) Test(in []byte) (uint32, []byte, error) {
 	return p.program.Test(in)
