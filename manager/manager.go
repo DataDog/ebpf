@@ -524,9 +524,7 @@ func (m *Manager) Start() error {
 	}
 
 	// clean up tracefs
-	if err := m.cleanupTracefs(); err != nil {
-		return errors.Wrap(err, "failed to cleanup tracefs")
-	}
+	_ = m.cleanupTracefs()
 
 	// Start perf ring readers
 	for _, perfRing := range m.PerfMaps {
