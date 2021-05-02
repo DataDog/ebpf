@@ -21,16 +21,16 @@ func perfEventOpenWithProbe(name string, offset, pid int, sectionPrefix string, 
 	}
 	attr.Size = uint32(unsafe.Sizeof(attr))
 
-	attr.Type, err = FindPMUType(sectionPrefix)
-	if err != nil {
-		return 0, errors.Wrapf(err, "couldn't find PMU type for %s", sectionPrefix)
-	}
+	attr.Type, _ = FindPMUType(sectionPrefix)
+	//if err != nil {
+	//	return 0, errors.Wrapf(err, "couldn't find PMU type for %s", sectionPrefix)
+	//}
 
 	var returnBit uint32
-	returnBit, err = FindRetProbeBit(sectionPrefix)
-	if err != nil {
-		return 0, errors.Wrapf(err, "couldn't find retprobe bit for %s", sectionPrefix)
-	}
+	returnBit, _ = FindRetProbeBit(sectionPrefix)
+	//if err != nil {
+	//	return 0, errors.Wrapf(err, "couldn't find retprobe bit for %s", sectionPrefix)
+	//}
 	if returnBit > 0 {
 		attr.Config = 1 << returnBit
 	}

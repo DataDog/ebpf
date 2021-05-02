@@ -429,11 +429,14 @@ func GetTracepointID(category, name string) (int, error) {
 // FindPMUType returns the PMU type of the provided event type
 // This function tries to use /sys/bus/event_source/devices/%s/type.
 func FindPMUType(eventType string) (uint32, error) {
+	var defaultType uint32
 	switch eventType {
 	case "kprobe", "kretprobe":
 		eventType = "kprobe"
+		defaultType = 6
 	case "uprobe", "uretprobe":
 		eventType = "uprobe"
+		defaultType = 7
 	default:
 		return 0, errors.Errorf("no PMU type for %s", eventType)
 	}
@@ -441,13 +444,13 @@ func FindPMUType(eventType string) (uint32, error) {
 	PMUTypeFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/type", eventType)
 	f, err := os.Open(PMUTypeFile)
 	if err != nil {
-		return 0, errors.Wrapf(err, "couldn't read %s", PMUTypeFile)
+		return defaultType, errors.Wrapf(err, "couldn't read %s", PMUTypeFile)
 	}
 
 	var t uint32
 	_, err = fmt.Fscanf(f, "%d\n", &t)
 	if err != nil {
-		return 0, errors.Wrap(err, "couldn't parse type")
+		return defaultType, errors.Wrap(err, "couldn't parse type")
 	}
 	return t, nil
 }
@@ -455,11 +458,14 @@ func FindPMUType(eventType string) (uint32, error) {
 // FindRetProbeBit returns the retprobe bit of the provided event type
 // This function relies on /sys/bus/event_source/devices/%s/format/retprobe.
 func FindRetProbeBit(eventType string) (uint32, error) {
+	var defaultBit uint32
 	switch eventType {
 	case "kprobe", "kretprobe":
 		eventType = "kprobe"
-	case "urpobe", "uretprobe":
+		defaultBit = 0
+	case "uprobe", "uretprobe":
 		eventType = "uprobe"
+		defaultBit = 0
 	default:
 		return 0, errors.Errorf("no retprobe bit for %s", eventType)
 	}
@@ -467,13 +473,13 @@ func FindRetProbeBit(eventType string) (uint32, error) {
 	retProbeFormatFile := fmt.Sprintf("/sys/bus/event_source/devices/%s/format/retprobe", eventType)
 	f, err := os.Open(retProbeFormatFile)
 	if err != nil {
-		return 0, errors.Wrapf(err, "couldn't read %s", retProbeFormatFile)
+		return defaultBit, errors.Wrapf(err, "couldn't read %s", retProbeFormatFile)
 	}
 
 	var bit uint32
 	_, err = fmt.Fscanf(f, "config:%d\n", &bit)
 	if err != nil {
-		return 0, errors.Wrap(err, "couldn't parse retprobe bit")
+		return defaultBit, errors.Wrap(err, "couldn't parse retprobe bit")
 	}
 	return bit, nil
 }
