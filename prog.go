@@ -186,7 +186,7 @@ func newProgram(fd *internal.FD, name string, abi *ProgramABI) *Program {
 
 func convertProgramSpec(spec *ProgramSpec, handle *btf.Handle) (*bpfProgLoadAttr, error) {
 	if len(spec.Instructions) == 0 {
-		return nil, errors.New("Instructions cannot be empty")
+		return nil, errors.New("Instructions cannot be empty (not loaded yet or unloaded)")
 	}
 
 	if len(spec.License) == 0 {

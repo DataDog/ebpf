@@ -1209,6 +1209,10 @@ func (m *Manager) editMapSpecs() error {
 
 // editConstant - Edit the provided program with the provided constant using the asm method.
 func (m *Manager) editConstant(prog *ebpf.ProgramSpec, editor ConstantEditor) error {
+	if len(prog.Instructions) == 0 {
+		return fmt.Errorf("cannot edit constant if program %s instructions havn't been loaded or have been unloaded", prog.Name)
+	}
+
 	edit := Edit(&prog.Instructions)
 	data, ok := (editor.Value).(uint64)
 	if !ok {
@@ -1224,6 +1228,10 @@ func (m *Manager) editConstant(prog *ebpf.ProgramSpec, editor ConstantEditor) er
 
 // rewriteMaps - Rewrite the provided program spec with the provided maps
 func (m *Manager) rewriteMaps(program *ebpf.ProgramSpec, eBPFMaps map[string]*ebpf.Map) error {
+	if len(program.Instructions) == 0 {
+		return fmt.Errorf("cannot rewrite maps if program %s instructions havn't been loaded or have been unloaded", program.Name)
+	}
+
 	for symbol, eBPFMap := range eBPFMaps {
 		fd := eBPFMap.FD()
 		err := program.Instructions.RewriteMapPtr(symbol, fd)
