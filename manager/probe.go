@@ -850,3 +850,8 @@ func (p *Probe) detachXDP() error {
 	err = netlink.LinkSetXdpFdWithFlags(link, -1, int(p.XDPAttachMode))
 	return errors.Wrapf(err, "couldn't detach XDP program %v from interface %v", p.GetIdentificationPair(), p.Ifindex)
 }
+
+// UnloadInstructions - Unload instructions for each probe, should save memory
+func (p *Probe) UnloadInstructions() {
+	p.programSpec.Instructions = nil
+}

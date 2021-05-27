@@ -577,6 +577,7 @@ func (m *Manager) Start() error {
 	return nil
 }
 
+// UnloadProbesInstructions - Unload instructions for each probe, should save memory
 func (m *Manager) UnloadProbesInstructions() error {
 	m.stateLock.Lock()
 	defer m.stateLock.Unlock()
@@ -585,10 +586,9 @@ func (m *Manager) UnloadProbesInstructions() error {
 	}
 
 	for _, probe := range m.Probes {
-		probe.programSpec.Instructions = nil
+		probe.UnloadInstructions()
 	}
 
-	// m.collectionSpec = nil
 	return nil
 }
 
