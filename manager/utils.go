@@ -362,7 +362,7 @@ func SanitizeUprobeAddresses(f *elf.File, syms []elf.Symbol) {
 		for i, sym := range syms {
 			for _, prog := range f.Progs {
 				if prog.Type == elf.PT_LOAD {
-					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr + prog.Memsz) {
+					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr+prog.Memsz) {
 						syms[i].Value = sym.Value - prog.Vaddr + prog.Off
 					}
 				}

@@ -13,7 +13,7 @@ func demoMapEditor() error {
 	// Select the shared map to give it to m2
 	sharedCache1, found, err := m1.GetMap("shared_cache1")
 	if err != nil || !found {
-		return errors.Wrap(err,"couldn't find shared_cache1 in m1")
+		return errors.Wrap(err, "couldn't find shared_cache1 in m1")
 	}
 	if err = dumpSharedMap(sharedCache1); err != nil {
 		return err

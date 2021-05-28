@@ -32,8 +32,8 @@ type PerfMapOptions struct {
 
 // PerfMap - Perf ring buffer reader wrapper
 type PerfMap struct {
-	manager     *Manager
-	perfReader  *perf.Reader
+	manager    *Manager
+	perfReader *perf.Reader
 
 	// Map - A PerfMap has the same features as a normal Map
 	Map
@@ -50,7 +50,7 @@ func loadNewPerfMap(spec ebpf.MapSpec, options MapOptions, perfOptions PerfMapOp
 
 	// Create the new map
 	perfMap := PerfMap{
-		Map: *innerMap,
+		Map:            *innerMap,
 		PerfMapOptions: perfOptions,
 	}
 	return &perfMap, nil

@@ -10,21 +10,21 @@ import (
 var m = &manager.Manager{
 	Probes: []*manager.Probe{
 		&manager.Probe{
-			Section: "kprobe/mkdirat",
-			PinPath: "/sys/fs/bpf/mkdirat",
+			Section:         "kprobe/mkdirat",
+			PinPath:         "/sys/fs/bpf/mkdirat",
 			SyscallFuncName: "mkdirat",
 		},
 		&manager.Probe{
-			Section: "kretprobe/mkdirat",
+			Section:         "kretprobe/mkdirat",
 			SyscallFuncName: "mkdirat",
 		},
 		&manager.Probe{
-			Section: "kprobe/mkdir",
-			PinPath: "/sys/fs/bpf/mkdir",
+			Section:         "kprobe/mkdir",
+			PinPath:         "/sys/fs/bpf/mkdir",
 			SyscallFuncName: "mkdir",
 		},
 		&manager.Probe{
-			Section: "kretprobe/mkdir",
+			Section:         "kretprobe/mkdir",
 			SyscallFuncName: "mkdir",
 		},
 	},
@@ -74,4 +74,3 @@ func main() {
 		logrus.Fatal(err)
 	}
 }
-

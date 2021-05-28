@@ -8,8 +8,8 @@ import (
 var m = &manager.Manager{
 	Probes: []*manager.Probe{
 		&manager.Probe{
-			Section: "classifier/one",
-			Ifname: "enp0s3", // change this to the interface index connected to the internet
+			Section:          "classifier/one",
+			Ifname:           "enp0s3", // change this to the interface index connected to the internet
 			NetworkDirection: manager.Egress,
 		},
 	},
@@ -37,4 +37,3 @@ func main() {
 		logrus.Fatal(err)
 	}
 }
-

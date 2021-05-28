@@ -26,7 +26,7 @@ func trigger() error {
 	stdinPipe, _ := cmd.StdinPipe()
 	go func() {
 		io.WriteString(stdinPipe, "id")
-		time.Sleep(100*time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		stdinPipe.Close()
 	}()
 	b, err := cmd.Output()
@@ -36,4 +36,3 @@ func trigger() error {
 	logrus.Printf("from bash: %v", string(b))
 	return nil
 }
-
