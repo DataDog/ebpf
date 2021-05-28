@@ -53,7 +53,7 @@ func trigger() error {
 	}
 
 	// Sleep a bit to give time to the perf event
-	time.Sleep(500*time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	// Removing a tmp directory to trigger the probes
 	logrus.Printf("removing %v", tmpDir)
@@ -63,7 +63,6 @@ func trigger() error {
 	}
 
 	// Sleep a bit to give time to the perf event
-	time.Sleep(500*time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	return nil
 }
-

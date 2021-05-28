@@ -8,7 +8,7 @@ import (
 var m = &manager.Manager{
 	Probes: []*manager.Probe{
 		&manager.Probe{
-			Section: "cgroup_skb/egress",
+			Section:    "cgroup_skb/egress",
 			CGroupPath: "/sys/fs/cgroup/unified",
 		},
 	},
@@ -35,4 +35,3 @@ func main() {
 		logrus.Fatal(err)
 	}
 }
-

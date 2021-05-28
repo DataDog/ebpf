@@ -10,12 +10,12 @@ import (
 func demoTailCall() error {
 	logrus.Println("generating some traffic to show what happens when the tail call is not set up ...")
 	trigger()
-	time.Sleep(1*time.Second)
+	time.Sleep(1 * time.Second)
 
 	// prepare tail call
 	route := manager.TailCallRoute{
 		ProgArrayName: "tc_prog_array",
-		Key: uint32(1),
+		Key:           uint32(1),
 		ProbeIdentificationPair: manager.ProbeIdentificationPair{
 			Section: "classifier/two",
 		},

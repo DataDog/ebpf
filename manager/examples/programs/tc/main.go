@@ -8,13 +8,13 @@ import (
 var m = &manager.Manager{
 	Probes: []*manager.Probe{
 		&manager.Probe{
-			Section: "classifier/egress",
-			Ifname: "enp0s3", // change this to the interface connected to the internet
+			Section:          "classifier/egress",
+			Ifname:           "enp0s3", // change this to the interface connected to the internet
 			NetworkDirection: manager.Egress,
 		},
 		&manager.Probe{
-			Section: "classifier/ingress",
-			Ifname: "enp0s3", // change this to the interface connected to the internet
+			Section:          "classifier/ingress",
+			Ifname:           "enp0s3", // change this to the interface connected to the internet
 			NetworkDirection: manager.Ingress,
 		},
 	},
@@ -41,4 +41,3 @@ func main() {
 		logrus.Fatal(err)
 	}
 }
-

@@ -9,7 +9,7 @@ import (
 )
 
 type TestData struct {
-	Input uint32
+	Input  uint32
 	Output uint32
 }
 

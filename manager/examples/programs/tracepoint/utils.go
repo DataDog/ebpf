@@ -33,4 +33,3 @@ func trigger() error {
 	logrus.Printf("removing %v", tmpDir)
 	return os.RemoveAll(tmpDir)
 }
-

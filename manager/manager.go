@@ -1014,7 +1014,7 @@ func (m *Manager) matchSpecs() error {
 			probe.programSpec = programSpec
 		} else {
 			probe.programSpec = programSpec.Copy()
-			m.collectionSpec.Programs[probe.Section + probe.UID] = probe.programSpec
+			m.collectionSpec.Programs[probe.Section+probe.UID] = probe.programSpec
 		}
 	}
 
@@ -1462,7 +1462,7 @@ func (m *Manager) cleanupTracefs() error {
 		if len(p.UID) == 0 {
 			continue
 		}
-		
+
 		var found bool
 		for _, uid := range uidSet {
 			if uid == p.UID {
@@ -1508,7 +1508,7 @@ func cleanupKprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
@@ -1549,7 +1549,7 @@ func cleanupUprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
