@@ -58,9 +58,8 @@ type Record struct {
 	CPU int
 
 	// The data submitted via bpf_perf_event_output.
-	// They are padded with 0 to have a 64-bit alignment.
-	// If you are using variable length samples you need to take
-	// this into account.
+	// Due to a kernel bug, this can contain between 0 and 7 bytes of trailing
+	// garbage from the ring depending on the input sample's length.
 	RawSample []byte
 
 	// The number of samples which could not be output, since
@@ -75,11 +74,6 @@ func readRecordFromRing(ring *perfEventRing) (Record, error) {
 }
 
 func readRecord(rd io.Reader, cpu int) (Record, error) {
-	const (
-		perfRecordLost   = 2
-		perfRecordSample = 9
-	)
-
 	var header perfEventHeader
 	err := binary.Read(rd, internal.NativeEndian, &header)
 	if err == io.EOF {
@@ -91,11 +85,11 @@ func readRecord(rd io.Reader, cpu int) (Record, error) {
 	}
 
 	switch header.Type {
-	case perfRecordLost:
+	case unix.PERF_RECORD_LOST:
 		lost, err := readLostRecords(rd)
 		return Record{CPU: cpu, LostSamples: lost}, err
 
-	case perfRecordSample:
+	case unix.PERF_RECORD_SAMPLE:
 		sample, err := readRawSample(rd)
 		return Record{CPU: cpu, RawSample: sample}, err
 
@@ -192,7 +186,7 @@ func NewReaderWithOptions(array *ebpf.Map, perCPUBuffer int, opts ReaderOptions)
 
 	var (
 		fds      = []int{epollFd}
-		nCPU     = int(array.ABI().MaxEntries)
+		nCPU     = int(array.MaxEntries())
 		rings    = make([]*perfEventRing, 0, nCPU)
 		pauseFds = make([]int, 0, nCPU)
 	)
@@ -316,9 +310,11 @@ func (pr *Reader) Close() error {
 // Read the next record from the perf ring buffer.
 //
 // The function blocks until there are at least Watermark bytes in one
-// of the per CPU buffers.
+// of the per CPU buffers. Records from buffers below the Watermark
+// are not returned.
 //
-// Records from buffers below the Watermark are not returned.
+// Records can contain between 0 and 7 bytes of trailing garbage from the ring
+// depending on the input sample's length.
 //
 // Calling Close interrupts the function.
 func (pr *Reader) Read() (Record, error) {
@@ -436,7 +432,7 @@ func (uev *unknownEventError) Error() string {
 	return fmt.Sprintf("unknown event type: %d", uev.eventType)
 }
 
-// IsUnknownEvent returns true if the error occured
+// IsUnknownEvent returns true if the error occurred
 // because an unknown event was submitted to the perf event ring.
 func IsUnknownEvent(err error) bool {
 	var uee *unknownEventError

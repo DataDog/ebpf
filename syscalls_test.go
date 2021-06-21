@@ -15,6 +15,7 @@ func TestObjNameCharacters(t *testing.T) {
 		"a-b":     false,
 		"yeah so": false,
 		"dot.":    objNameAllowsDot() == nil,
+		"Capital": true,
 	} {
 		result := strings.IndexFunc(in, invalidBPFObjNameChar) == -1
 		if result != valid {
@@ -31,6 +32,10 @@ func TestObjName(t *testing.T) {
 	if len(name) != unix.BPF_OBJ_NAME_LEN {
 		t.Errorf("Name is %d instead of %d bytes long", len(name), unix.BPF_OBJ_NAME_LEN)
 	}
+}
+
+func TestHaveBatchAPI(t *testing.T) {
+	testutils.CheckFeatureTest(t, haveBatchAPI)
 }
 
 func TestHaveObjName(t *testing.T) {

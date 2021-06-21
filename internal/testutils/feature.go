@@ -43,8 +43,12 @@ func CheckFeatureTest(t *testing.T, fn func() error) {
 		return
 	}
 
-	ufe := err.(*internal.UnsupportedFeatureError)
-	checkKernelVersion(t, ufe)
+	var ufe *internal.UnsupportedFeatureError
+	if errors.As(err, &ufe) {
+		checkKernelVersion(t, ufe)
+	} else {
+		t.Error("Feature test failed:", err)
+	}
 }
 
 func SkipIfNotSupported(tb testing.TB, err error) {
@@ -53,9 +57,16 @@ func SkipIfNotSupported(tb testing.TB, err error) {
 		checkKernelVersion(tb, ufe)
 		tb.Skip(ufe.Error())
 	}
+	if errors.Is(err, internal.ErrNotSupported) {
+		tb.Skip(err.Error())
+	}
 }
 
 func checkKernelVersion(tb testing.TB, ufe *internal.UnsupportedFeatureError) {
+	if ufe.MinimumVersion.Unspecified() {
+		return
+	}
+
 	kernelVersion := mustKernelVersion()
 	if ufe.MinimumVersion.Less(kernelVersion) {
 		tb.Helper()

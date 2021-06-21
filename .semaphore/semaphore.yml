@@ -6,31 +6,53 @@ agent:
     type: e1-standard-2
     os_image: ubuntu1804
 
+global_job_config:
+  secrets:
+    - name: Coveralls
+
 blocks:
   - name: Run tests
     task:
       prologue:
         commands:
           - checkout
-          - sem-version go 1.14
+          # Until go 1.16 is available on semaphore.
+          - sudo mkdir -p /usr/local/golang/1.16 && curl -fL "https://golang.org/dl/go1.16.linux-amd64.tar.gz" | sudo tar -xz -C /usr/local/golang/1.16
+          - sem-version go 1.16
+          - go install github.com/mattn/goveralls@latest
+          - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.38.0
+          - export PATH="$PATH:$(go env GOPATH)/bin"
+          - cache restore
+          - go mod tidy
           - go build ./...
           - sudo pip3 install https://github.com/amluto/virtme/archive/538f1e756139a6b57a4780e7ceb3ac6bcaa4fe6f.zip
-          - sudo apt-get install -y qemu-system-x86
+          - sudo apt-get update
+          - sudo apt-get install -y --no-install-recommends qemu-system-x86 clang-9
+          - go generate ./cmd/bpf2go
+          - git diff --exit-code || { echo "generated files are not up to date" >&2; false; }
+      epilogue:
+        commands:
+          - cache store
       env_vars:
         - name: TMPDIR
           value: /tmp
       jobs:
-      - name: Test building on other OS and arch
+      - name: Build
         commands:
+          - pushd ./examples; go build -v -o "$(mktemp -d)" ./...; popd
           - GOOS=darwin go build ./... && for p in $(go list ./...) ; do GOOS=darwin go test -c $p ; done
           - GOARCH=arm GOARM=6 go build ./... && for p in $(go list ./...) ; do GOARCH=arm GOARM=6 go test -c $p ; done
           - GOARCH=arm64 go build ./... && for p in $(go list ./...) ; do GOARCH=arm64 go test -c $p ; done
+      - name: Lint
+        commands:
+          - golangci-lint run
+      - name: Run unit tests on previous stable Go
+        commands:
+          - sem-version go 1.15
+          - timeout -s KILL 600s ./run-tests.sh 5.10
       - name: Run unit tests
         matrix:
-          - env_var: GO_VERSION
-            values: [ "1.13", "1.14" ]
           - env_var: KERNEL_VERSION
-            values: ["5.4.5", "4.19.81", "4.9.198"]
+            values: ["5.10", "5.9", "5.4", "4.19", "4.9"]
         commands:
-          - sem-version go $GO_VERSION
-          - timeout -s KILL 90s ./run-tests.sh $KERNEL_VERSION
+          - timeout -s KILL 600s ./run-tests.sh $KERNEL_VERSION

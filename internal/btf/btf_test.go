@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -30,26 +31,50 @@ func TestParseVmlinux(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err = parseBTF(bytes.NewReader(buf), binary.LittleEndian)
+	spec, err := loadNakedSpec(bytes.NewReader(buf), binary.LittleEndian, nil, nil)
 	if err != nil {
 		t.Fatal("Can't load BTF:", err)
+	}
+
+	var iphdr Struct
+	err = spec.FindType("iphdr", &iphdr)
+	if err != nil {
+		t.Fatalf("unable to find `iphdr` struct: %s", err)
+	}
+	for _, m := range iphdr.Members {
+		if m.Name == "version" {
+			// __u8 is a typedef
+			td, ok := m.Type.(*Typedef)
+			if !ok {
+				t.Fatalf("version member of iphdr should be a __u8 typedef: actual: %T", m.Type)
+			}
+			u8int, ok := td.Type.(*Int)
+			if !ok {
+				t.Fatalf("__u8 typedef should point to an Int type: actual: %T", td.Type)
+			}
+			if u8int.Bits != 8 {
+				t.Fatalf("incorrect bit size of an __u8 int: expected: 8 actual: %d", u8int.Bits)
+			}
+			if u8int.Encoding != 0 {
+				t.Fatalf("incorrect encoding of an __u8 int: expected: 0 actual: %x", u8int.Encoding)
+			}
+			if u8int.Offset != 0 {
+				t.Fatalf("incorrect int offset of an __u8 int: expected: 0 actual: %d", u8int.Offset)
+			}
+			return
+		}
 	}
 }
 
 func TestParseCurrentKernelBTF(t *testing.T) {
-	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); os.IsNotExist(err) {
-		t.Skip("/sys/kernel/btf/vmlinux is not available")
-	}
-
-	fh, err := os.Open("/sys/kernel/btf/vmlinux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fh.Close()
-
-	_, _, err = parseBTF(fh, binary.LittleEndian)
+	spec, err := loadKernelSpec()
+	testutils.SkipIfNotSupported(t, err)
 	if err != nil {
 		t.Fatal("Can't load BTF:", err)
+	}
+
+	if len(spec.namedTypes) == 0 {
+		t.Fatal("Empty kernel BTF")
 	}
 }
 
@@ -84,7 +109,12 @@ func TestLoadSpecFromElf(t *testing.T) {
 
 		var bpfMapDef Struct
 		if err := spec.FindType("bpf_map_def", &bpfMapDef); err != nil {
-			t.Fatal("Can't find bpf_map_def:", err)
+			t.Error("Can't find bpf_map_def:", err)
+		}
+
+		var tmp Void
+		if err := spec.FindType("totally_bogus_type", &tmp); !errors.Is(err, ErrNotFound) {
+			t.Error("FindType doesn't return ErrNotFound:", err)
 		}
 
 		if spec.byteOrder != internal.NativeEndian {
@@ -102,8 +132,23 @@ func TestLoadSpecFromElf(t *testing.T) {
 	})
 }
 
+func TestLoadKernelSpec(t *testing.T) {
+	if _, err := os.Stat("/sys/kernel/btf/vmlinux"); os.IsNotExist(err) {
+		t.Skip("/sys/kernel/btf/vmlinux not present")
+	}
+
+	_, err := LoadKernelSpec()
+	if err != nil {
+		t.Fatal("Can't load kernel spec:", err)
+	}
+}
+
 func TestHaveBTF(t *testing.T) {
 	testutils.CheckFeatureTest(t, haveBTF)
+}
+
+func TestHaveFuncLinkage(t *testing.T) {
+	testutils.CheckFeatureTest(t, haveFuncLinkage)
 }
 
 func ExampleSpec_FindType() {

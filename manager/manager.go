@@ -1014,7 +1014,7 @@ func (m *Manager) matchSpecs() error {
 			probe.programSpec = programSpec
 		} else {
 			probe.programSpec = programSpec.Copy()
-			m.collectionSpec.Programs[probe.Section + probe.UID] = probe.programSpec
+			m.collectionSpec.Programs[probe.Section+probe.UID] = probe.programSpec
 		}
 	}
 
@@ -1083,7 +1083,7 @@ func (m *Manager) UpdateActivatedProbes(selectors []ProbesSelector) error {
 		}
 	}
 
-	for id, _ := range nextProbes {
+	for id := range nextProbes {
 		if _, alreadyPresent := currentProbes[id]; alreadyPresent {
 			delete(currentProbes, id)
 		} else {
@@ -1345,17 +1345,9 @@ func (m *Manager) loadPinnedMap(managerMap *Map) error {
 		return ErrPinnedObjectNotFound
 	}
 
-	// To maximize kernel compatibility, build the expected MapABI structure
-	abi := ebpf.MapABI{
-		Type:       managerMap.arraySpec.Type,
-		KeySize:    managerMap.arraySpec.KeySize,
-		ValueSize:  managerMap.arraySpec.ValueSize,
-		MaxEntries: managerMap.arraySpec.MaxEntries,
-		Flags:      managerMap.arraySpec.Flags,
-	}
-	pinnedMap, err := ebpf.LoadPinnedMapExplicit(managerMap.PinPath, &abi)
+	pinnedMap, err := ebpf.LoadPinnedMap(managerMap.PinPath)
 	if err != nil {
-		return errors.Wrapf(err, "couldn't load map %s from %s", managerMap.Name, managerMap.PinPath)
+		return fmt.Errorf("couldn't load map %s from %s: %w", managerMap.Name, managerMap.PinPath, err)
 	}
 
 	// Replace map in CollectionSpec
@@ -1374,13 +1366,9 @@ func (m *Manager) loadPinnedProgram(prog *Probe) error {
 		return ErrPinnedObjectNotFound
 	}
 
-	// To maximize kernel compatibility, build the expected ProgramABI structure
-	abi := ebpf.ProgramABI{
-		Type: prog.programSpec.Type,
-	}
-	pinnedProg, err := ebpf.LoadPinnedProgramExplicit(prog.PinPath, &abi)
+	pinnedProg, err := ebpf.LoadPinnedProgram(prog.PinPath)
 	if err != nil {
-		return errors.Wrapf(err, "couldn't load program %v from %s", prog.GetIdentificationPair(), prog.PinPath)
+		return fmt.Errorf("couldn't load program %v from %s: %w", prog.GetIdentificationPair(), prog.PinPath, err)
 	}
 	prog.program = pinnedProg
 
@@ -1462,7 +1450,7 @@ func (m *Manager) cleanupTracefs() error {
 		if len(p.UID) == 0 {
 			continue
 		}
-		
+
 		var found bool
 		for _, uid := range uidSet {
 			if uid == p.UID {
@@ -1508,7 +1496,7 @@ func cleanupKprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
@@ -1549,7 +1537,7 @@ func cleanupUprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
