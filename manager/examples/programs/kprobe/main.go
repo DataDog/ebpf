@@ -48,6 +48,11 @@ func main() {
 		logrus.Fatal(err)
 	}
 
+	// Cleanup the manager
+	if err := m.UnloadProbesInstructions(); err != nil {
+		logrus.Fatal(err)
+	}
+
 	logrus.Println("successfully started")
 	logrus.Println("=> head over to /sys/kernel/debug/tracing/trace_pipe")
 	logrus.Println("=> checkout /sys/kernel/debug/tracing/kprobe_events, utimes_common might have become utimes_common.isra.0")

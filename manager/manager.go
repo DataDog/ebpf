@@ -577,6 +577,21 @@ func (m *Manager) Start() error {
 	return nil
 }
 
+// UnloadProbesInstructions - Unload instructions for each probe, should save memory
+func (m *Manager) UnloadProbesInstructions() error {
+	m.stateLock.Lock()
+	defer m.stateLock.Unlock()
+	if m.state < initialized {
+		return ErrManagerNotInitialized
+	}
+
+	for _, probe := range m.Probes {
+		probe.UnloadInstructions()
+	}
+
+	return nil
+}
+
 // Stop - Detach all eBPF programs and stop perf ring readers. The cleanup parameter defines which maps should be closed.
 // See MapCleanupType for mode.
 func (m *Manager) Stop(cleanup MapCleanupType) error {
@@ -1194,6 +1209,10 @@ func (m *Manager) editMapSpecs() error {
 
 // editConstant - Edit the provided program with the provided constant using the asm method.
 func (m *Manager) editConstant(prog *ebpf.ProgramSpec, editor ConstantEditor) error {
+	if len(prog.Instructions) == 0 {
+		return fmt.Errorf("cannot edit constant if program %s instructions havn't been loaded or have been unloaded", prog.Name)
+	}
+
 	edit := Edit(&prog.Instructions)
 	data, ok := (editor.Value).(uint64)
 	if !ok {
@@ -1209,6 +1228,10 @@ func (m *Manager) editConstant(prog *ebpf.ProgramSpec, editor ConstantEditor) er
 
 // rewriteMaps - Rewrite the provided program spec with the provided maps
 func (m *Manager) rewriteMaps(program *ebpf.ProgramSpec, eBPFMaps map[string]*ebpf.Map) error {
+	if len(program.Instructions) == 0 {
+		return fmt.Errorf("cannot rewrite maps if program %s instructions havn't been loaded or have been unloaded", program.Name)
+	}
+
 	for symbol, eBPFMap := range eBPFMaps {
 		fd := eBPFMap.FD()
 		err := program.Instructions.RewriteMapPtr(symbol, fd)

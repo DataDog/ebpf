@@ -55,6 +55,10 @@ func (cs *CollectionSpec) RewriteMaps(maps map[string]*Map) error {
 		seen := false
 		fd := m.FD()
 		for progName, progSpec := range cs.Programs {
+			if len(progSpec.Instructions) == 0 {
+				return fmt.Errorf("canot rewrite map if program %s instructions are not loaded", progName)
+			}
+
 			err := progSpec.Instructions.RewriteMapPtr(symbol, fd)
 
 			switch {
@@ -200,6 +204,10 @@ func NewCollectionWithOptions(spec *CollectionSpec, opts CollectionOptions) (col
 
 	for progName, origProgSpec := range spec.Programs {
 		progSpec := origProgSpec.Copy()
+
+		if len(progSpec.Instructions) == 0 {
+			return nil, fmt.Errorf("canot rewrite map reference if program instructions are not loaded")
+		}
 
 		// Rewrite any reference to a valid map.
 		for i := range progSpec.Instructions {

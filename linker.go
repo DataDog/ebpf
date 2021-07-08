@@ -14,6 +14,10 @@ import (
 //
 // Libraries also linked.
 func link(prog *ProgramSpec, libs []*ProgramSpec) error {
+	if len(prog.Instructions) == 0 {
+		return fmt.Errorf("cannot link if program %s instructions are not loaded", prog.Name)
+	}
+
 	var (
 		linked  = make(map[*ProgramSpec]bool)
 		pending = []asm.Instructions{prog.Instructions}
@@ -24,6 +28,10 @@ func link(prog *ProgramSpec, libs []*ProgramSpec) error {
 		for _, lib := range libs {
 			if linked[lib] {
 				continue
+			}
+
+			if len(lib.Instructions) == 0 {
+				return fmt.Errorf("cannot link lib %s if instructions are not loaded", lib.Name)
 			}
 
 			needed, err := needSection(insns, lib.Instructions)
