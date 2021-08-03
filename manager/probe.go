@@ -656,7 +656,7 @@ func (p *Probe) attachUprobe() error {
 		}
 
 		// Retrieve dynamic symbol offset
-		offsets, err := FindSymbolOffsets(p.BinaryPath, pattern)
+		offsets, err := FindSymbolOffsets(p.BinaryPath, pattern, p.attachPID)
 		if err != nil {
 			return errors.Wrapf(err, "couldn't find symbol matching %s in %s", pattern.String(), p.BinaryPath)
 		}

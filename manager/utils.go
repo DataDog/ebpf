@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bytes"
 	"debug/elf"
 	"fmt"
 	"io/ioutil"
@@ -11,8 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unsafe"
 
+	"github.com/DataDog/ebpf/manager/elfmap"
 	"github.com/pkg/errors"
+	"github.com/prometheus/procfs"
 )
 
 type state uint
@@ -326,6 +330,82 @@ func EnableUprobeEvent(probeType string, funcName, path, UID string, uprobeAttac
 	return uprobeId, nil
 }
 
+func memELFFromProcMaps(pid int, path string) ([]byte, uintptr, error) {
+	p, err := procfs.NewProc(pid)
+	if err != nil {
+		return nil, uintptr(0), err
+	}
+	procMaps, err := p.ProcMaps()
+	if err != nil {
+		return nil, uintptr(0), err
+	}
+	b := make([]byte, 0)
+
+	offset := int64(0)
+	vBaseAddr := uintptr(0)
+	for _, m := range procMaps {
+		if m.Pathname == path && m.Perms.Read {
+			if offset == 0 {
+				vBaseAddr = m.StartAddr
+			}
+			if offset != m.Offset {
+				if m.Offset > offset {
+					b = append(b, make([]byte, m.Offset-offset)...)
+				}
+				if offset > m.Offset {
+					b = b[:m.Offset] /* truncate */
+					offset = m.Offset
+				}
+			}
+
+			/* Ugly memcpy, but golang firendly */
+			len := int64(m.EndAddr - m.StartAddr)
+			mem := make([]byte, len)
+			for i := int64(0); i < len; i++ {
+				var src *uint8 = (*uint8)(unsafe.Pointer(m.StartAddr + uintptr(i)))
+				mem[i] = *src
+			}
+			b = append(b, mem...)
+			offset += len
+		}
+	}
+	return b, vBaseAddr, nil
+}
+
+// OpenAndListSymbolsFromPID - Opens an elf file matching path from memory (/proc/pid/maps)  and extracts all its symbols
+func OpenAndListSymbolsFromPID(pid int, path string) (*elf.File, []elf.Symbol, error) {
+	b, vBaseAddr, err := memELFFromProcMaps(pid, path)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "couldn't create elf from /proc/pid/maps %d %s", pid, path)
+	}
+
+	f, err := elfmap.OpenMapBytes(bytes.NewReader(b), vBaseAddr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "couldn't open memory elf from /proc/pid/maps %d %s", pid, path)
+	}
+	defer f.Close()
+
+	// Loop through all symbols
+	syms, errSyms := f.Symbols()
+	dynSyms, errDynSyms := f.DynamicSymbols()
+	syms = append(syms, dynSyms...)
+
+	if len(syms) == 0 {
+		var err error
+		if errSyms != nil {
+			err = errors.Wrap(err, "failed to list symbols")
+		}
+		if errDynSyms != nil {
+			err = errors.Wrap(err, "failed to list dynamic symbols")
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, errors.New("no symbols found")
+	}
+	return f.Elf, syms, nil
+}
+
 // OpenAndListSymbols - Opens an elf file and extracts all its symbols
 func OpenAndListSymbols(path string) (*elf.File, []elf.Symbol, error) {
 	// open elf file
@@ -366,7 +446,7 @@ func SanitizeUprobeAddresses(f *elf.File, syms []elf.Symbol) {
 		for i, sym := range syms {
 			for _, prog := range f.Progs {
 				if prog.Type == elf.PT_LOAD {
-					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr + prog.Memsz) {
+					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr+prog.Memsz) {
 						syms[i].Value = sym.Value - prog.Vaddr + prog.Off
 					}
 				}
@@ -376,10 +456,14 @@ func SanitizeUprobeAddresses(f *elf.File, syms []elf.Symbol) {
 }
 
 // FindSymbolOffsets - Parses the provided file and returns the offsets of the symbols that match the provided pattern
-func FindSymbolOffsets(path string, pattern *regexp.Regexp) ([]elf.Symbol, error) {
+func FindSymbolOffsets(path string, pattern *regexp.Regexp, pid int) ([]elf.Symbol, error) {
+	var syms []elf.Symbol
 	f, syms, err := OpenAndListSymbols(path)
 	if err != nil {
-		return nil, err
+		f, syms, err = OpenAndListSymbolsFromPID(pid, path)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var matches []elf.Symbol

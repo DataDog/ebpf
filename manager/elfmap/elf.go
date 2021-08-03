@@ -360,17 +360,7 @@ func rebuildSymtabStrTabFromDynamic(f *elf.File, r io.ReaderAt, vBaseAddr uintpt
 	f.Sections[0] = createSection(f, r, elf.SHT_DYNSYM, addrSymtab-uint64(vBaseAddr), addrStrtab-addrSymtab)
 	f.Sections[0].Link = 1
 	strtabOffset := addrStrtab - uint64(vBaseAddr)
-	f.Sections[1] = createSection(f, r, elf.SHT_STRTAB, strtabOffset, mapSize-strtabOffset) // max available
-
-	/* Fixup symbol virtual address */
-	dynSyms, err := dynamicSymbols(f)
-	if err != nil {
-		return err
-	}
-	for i, s := range dynSyms {
-		s.Value += uint64(vBaseAddr)
-		dynSyms[i] = s
-	}
+	f.Sections[1] = createSection(f, r, elf.SHT_STRTAB, strtabOffset, mapSize-strtabOffset /* max available */)
 
 	return nil
 }
