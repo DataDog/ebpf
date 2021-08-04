@@ -330,6 +330,67 @@ func EnableUprobeEvent(probeType string, funcName, path, UID string, uprobeAttac
 	return uprobeId, nil
 }
 
+type memoryAccess int
+
+const (
+	Direct memoryAccess = iota
+	Ptrace
+)
+
+type processMemory struct {
+	memoryAccess memoryAccess
+	pid          int
+}
+
+func newProcessMemory(targetPID int) *processMemory {
+	p := &processMemory{
+		pid: targetPID,
+	}
+	if targetPID == os.Getpid() {
+		p.memoryAccess = Direct
+	} else {
+		p.memoryAccess = Ptrace
+	} /* else { eRPC.Peek(addr, size) }  */
+	return p
+}
+
+func (p *processMemory) PeekMemory(addr uintptr, size uint64) ([]byte, error) {
+	mem := make([]byte, size)
+
+	switch p.memoryAccess {
+	case Direct:
+		/* Ugly memcpy, but golang firendly */
+		for i := uint64(0); i < size; i++ {
+			var src *uint8 = (*uint8)(unsafe.Pointer(addr + uintptr(i)))
+			mem[i] = *src
+		}
+		return mem, nil
+	case Ptrace:
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		err := syscall.PtraceAttach(p.pid)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ptrace attach")
+		}
+		_, err = syscall.Wait4(p.pid, nil, 0, nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "wait4")
+		}
+		copied, err := syscall.PtracePeekData(p.pid, addr, mem[:])
+		if err != nil || copied != 8 {
+			return nil, errors.Wrapf(err, "ptrace peek data")
+		}
+		err = syscall.PtraceDetach(p.pid)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ptrace detach")
+		}
+		return mem, nil
+		/* case eRPC: { return eRPC.Peek(p.pid, addr, size) } */
+	}
+	return nil, nil
+}
+
 func memELFFromProcMaps(pid int, path string) ([]byte, uintptr, error) {
 	p, err := procfs.NewProc(pid)
 	if err != nil {
@@ -358,15 +419,18 @@ func memELFFromProcMaps(pid int, path string) ([]byte, uintptr, error) {
 				}
 			}
 
-			/* Ugly memcpy, but golang firendly */
-			len := int64(m.EndAddr - m.StartAddr)
-			mem := make([]byte, len)
-			for i := int64(0); i < len; i++ {
-				var src *uint8 = (*uint8)(unsafe.Pointer(m.StartAddr + uintptr(i)))
-				mem[i] = *src
+			pMem := newProcessMemory(pid)
+			size := int64(m.EndAddr - m.StartAddr)
+			if size <= 0 {
+				return nil, uintptr(0), fmt.Errorf("wrong mapping 0x%x 0x%x", m.EndAddr, m.StartAddr)
 			}
+			mem, err := pMem.PeekMemory(m.StartAddr, uint64(size))
+			if err != nil {
+				return nil, uintptr(0), errors.Wrapf(err, "process (%d) peek memory", pid)
+			}
+
 			b = append(b, mem...)
-			offset += len
+			offset += size
 		}
 	}
 	return b, vBaseAddr, nil
