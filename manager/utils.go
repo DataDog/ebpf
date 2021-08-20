@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -15,8 +16,9 @@ import (
 	"unsafe"
 
 	"github.com/DataDog/ebpf/manager/elfmap"
+	"github.com/DataDog/gopsutil/process"
+	"github.com/DataDog/gopsutil/process/so"
 	"github.com/pkg/errors"
-	"github.com/prometheus/procfs"
 )
 
 type state uint
@@ -392,11 +394,11 @@ func (p *processMemory) PeekMemory(addr uintptr, size uint64) ([]byte, error) {
 }
 
 func memELFFromProcMaps(pid int, path string) ([]byte, uintptr, error) {
-	p, err := procfs.NewProc(pid)
+	p, err := process.NewProcess(int32(pid))
 	if err != nil {
 		return nil, uintptr(0), err
 	}
-	procMaps, err := p.ProcMaps()
+	procMaps, err := p.MemoryMaps(true)
 	if err != nil {
 		return nil, uintptr(0), err
 	}
@@ -404,18 +406,18 @@ func memELFFromProcMaps(pid int, path string) ([]byte, uintptr, error) {
 
 	offset := int64(0)
 	vBaseAddr := uintptr(0)
-	for _, m := range procMaps {
-		if m.Pathname == path && m.Perms.Read {
+	for _, m := range *procMaps {
+		if m.Path == path && m.Permission.Read {
 			if offset == 0 {
 				vBaseAddr = m.StartAddr
 			}
-			if offset != m.Offset {
-				if m.Offset > offset {
-					b = append(b, make([]byte, m.Offset-offset)...)
+			if uint64(offset) != m.Offset {
+				if m.Offset > uint64(offset) {
+					b = append(b, make([]byte, m.Offset-uint64(offset))...)
 				}
-				if offset > m.Offset {
+				if uint64(offset) > m.Offset {
 					b = b[:m.Offset] /* truncate */
-					offset = m.Offset
+					offset = int64(m.Offset)
 				}
 			}
 
@@ -520,16 +522,40 @@ func SanitizeUprobeAddresses(f *elf.File, syms []elf.Symbol) {
 }
 
 // FindSymbolOffsets - Parses the provided file and returns the offsets of the symbols that match the provided pattern
-func FindSymbolOffsets(path string, pattern *regexp.Regexp, pid int) ([]elf.Symbol, error) {
+func FindSymbolOffsets(path string, pattern *regexp.Regexp) ([]elf.Symbol, error) {
 	var syms []elf.Symbol
 	f, syms, err := OpenAndListSymbols(path)
 	if err != nil {
-		f, syms, err = OpenAndListSymbolsFromPID(pid, path)
+		libRegex, err := regexp.Compile(path)
 		if err != nil {
 			return nil, err
 		}
+		libs := so.Find(libRegex)
+		if len(libs) == 0 {
+			return nil, fmt.Errorf("Can't find running process that have this lib %s loaded", path)
+		}
+		found := false
+		for _, lib := range libs {
+			for _, pidPath := range lib.PidsPath {
+				pidStr := filepath.Base(pidPath)
+				var pid int
+				pid, err = strconv.Atoi(pidStr)
+				if err != nil {
+					continue
+				}
+				f, syms, err = OpenAndListSymbolsFromPID(pid, path)
+				if err == nil {
+					found = true
+					goto found_syms
+				}
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("Can't find/read memory of process for lib %s last error : %v", path, err)
+		}
 	}
 
+found_syms:
 	var matches []elf.Symbol
 	for _, sym := range syms {
 		if elf.ST_TYPE(sym.Info) == elf.STT_FUNC && pattern.MatchString(sym.Name) {

@@ -1,5 +1,7 @@
 github.com/DataDog/gopsutil v0.0.0-20200624212600-1b53412ef321 h1:OPAXA+r6yznoxWR5jQ2iTh5CvzIMrdw8AU0uFN2RwEw=
 github.com/DataDog/gopsutil v0.0.0-20200624212600-1b53412ef321/go.mod h1:tGQp6XG4XpOyy67WG/YWXVxzOY6LejK35e8KcQhtRIQ=
+github.com/DataDog/gopsutil v0.0.0-20210826160129-3c6427dc5ff9 h1:SSaP9KFuIv9qQEPIfA/rkqjvW2ikdouyiXRuwg1Svyw=
+github.com/DataDog/gopsutil v0.0.0-20210826160129-3c6427dc5ff9/go.mod h1:glkxNt/qRu9lnpmUEQwOIAXW+COWDTBOTEAHqbgBPts=
 github.com/StackExchange/wmi v0.0.0-20181212234831-e0a55b97c705 h1:UUppSQnhf4Yc6xGxSkoQpPhb7RVzuv5Nb1mwJ5VId9s=
 github.com/StackExchange/wmi v0.0.0-20181212234831-e0a55b97c705/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=
 github.com/avast/retry-go v2.7.0+incompatible h1:XaGnzl7gESAideSjr+I8Hki/JBi+Yb9baHlMRPeSC84=
@@ -69,6 +71,8 @@ golang.org/x/sys v0.0.0-20200320181252-af34d8274f85 h1:fD99hd4ciR6T3oPhr2EkmuKe9
 golang.org/x/sys v0.0.0-20200320181252-af34d8274f85/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c h1:VwygUrnw9jn88c4u8GD3rZQbqrP/tgas88tPUbBxQrk=
 golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf h1:2ucpDCmfkl8Bd/FsLtiD653Wf96cW37s+iGx93zsu4k=
+golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
