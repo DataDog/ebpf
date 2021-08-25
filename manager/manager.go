@@ -246,6 +246,31 @@ type Manager struct {
 	PerfMaps []*PerfMap
 }
 
+// DumpMaps - Return a string containing human readable info about eBPF maps
+func (m *Manager) DumpMaps() (string, error) {
+	m.stateLock.RLock()
+	defer m.stateLock.RUnlock()
+
+	if m.collection == nil || m.state < initialized {
+		return "", ErrManagerNotInitialized
+	}
+
+	var output strings.Builder
+	// Look in the list of maps
+	for _, managerMap := range m.Maps {
+		if managerMap.DumpHandler != nil {
+			output.WriteString(managerMap.DumpHandler(managerMap, m))
+		}
+	}
+	// Look in the list of perf maps
+	for _, perfMap := range m.PerfMaps {
+		if perfMap.DumpHandler != nil {
+			output.WriteString(perfMap.DumpHandler(perfMap, m))
+		}
+	}
+	return output.String(), nil
+}
+
 // GetMap - Return a pointer to the requested eBPF map
 // name: name of the map, as defined by its section SEC("maps/[name]")
 func (m *Manager) GetMap(name string) (*ebpf.Map, bool, error) {
@@ -1014,7 +1039,7 @@ func (m *Manager) matchSpecs() error {
 			probe.programSpec = programSpec
 		} else {
 			probe.programSpec = programSpec.Copy()
-			m.collectionSpec.Programs[probe.Section + probe.UID] = probe.programSpec
+			m.collectionSpec.Programs[probe.Section+probe.UID] = probe.programSpec
 		}
 	}
 
@@ -1462,7 +1487,7 @@ func (m *Manager) cleanupTracefs() error {
 		if len(p.UID) == 0 {
 			continue
 		}
-		
+
 		var found bool
 		for _, uid := range uidSet {
 			if uid == p.UID {
@@ -1508,7 +1533,7 @@ func cleanupKprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
@@ -1549,7 +1574,7 @@ func cleanupUprobeEvents(pattern *regexp.Regexp, pidMask map[int]procMask) error
 		}
 		if state, ok := pidMask[pid]; !ok {
 			// this short sleep is used to avoid a CPU spike (5s ~ 60k * 80 microseconds)
-			time.Sleep(80*time.Microsecond)
+			time.Sleep(80 * time.Microsecond)
 
 			_, err = process.NewProcess(int32(pid))
 			if err == nil {
