@@ -1,9 +1,12 @@
 package internal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/DataDog/ebpf/internal/unix"
 )
 
 // ErrNotSupported indicates that a feature is not supported by the current kernel.
@@ -89,4 +92,30 @@ func (v Version) Less(other Version) bool {
 		return a < other[i]
 	}
 	return false
+}
+
+var (
+	kernelVersionOnce sync.Once
+	kernelVersion     Version
+)
+
+// MustKernelVersion() return the current kernel version
+func MustKernelVersion() Version {
+	kernelVersionOnce.Do(func() {
+		var uname unix.Utsname
+		err := unix.Uname(&uname)
+		if err != nil {
+			panic(err)
+		}
+
+		end := bytes.IndexByte(uname.Release[:], 0)
+		release := string(uname.Release[:end])
+
+		kernelVersion, err = NewVersion(release)
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	return kernelVersion
 }

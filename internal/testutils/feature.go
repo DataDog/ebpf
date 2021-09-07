@@ -1,39 +1,11 @@
 package testutils
 
 import (
-	"bytes"
 	"errors"
-	"sync"
 	"testing"
 
 	"github.com/DataDog/ebpf/internal"
-	"github.com/DataDog/ebpf/internal/unix"
 )
-
-var (
-	kernelVersionOnce sync.Once
-	kernelVersion     internal.Version
-)
-
-func mustKernelVersion() internal.Version {
-	kernelVersionOnce.Do(func() {
-		var uname unix.Utsname
-		err := unix.Uname(&uname)
-		if err != nil {
-			panic(err)
-		}
-
-		end := bytes.IndexByte(uname.Release[:], 0)
-		release := string(uname.Release[:end])
-
-		kernelVersion, err = internal.NewVersion(release)
-		if err != nil {
-			panic(err)
-		}
-	})
-
-	return kernelVersion
-}
 
 func CheckFeatureTest(t *testing.T, fn func() error) {
 	t.Helper()
@@ -56,7 +28,7 @@ func SkipIfNotSupported(tb testing.TB, err error) {
 }
 
 func checkKernelVersion(tb testing.TB, ufe *internal.UnsupportedFeatureError) {
-	kernelVersion := mustKernelVersion()
+	kernelVersion := internal.MustKernelVersion()
 	if ufe.MinimumVersion.Less(kernelVersion) {
 		tb.Helper()
 		tb.Fatalf("Feature '%s' isn't supported even though kernel %s is newer than %s",
@@ -72,7 +44,7 @@ func SkipOnOldKernel(tb testing.TB, minVersion, feature string) {
 		tb.Fatalf("Invalid version %s: %s", minVersion, err)
 	}
 
-	if mustKernelVersion().Less(minv) {
+	if internal.MustKernelVersion().Less(minv) {
 		tb.Skipf("Test requires at least kernel %s (due to missing %s)", minv, feature)
 	}
 }
