@@ -279,12 +279,6 @@ func (m *Manager) DumpMaps(maps ...string) (string, error) {
 			output.WriteString(managerMap.DumpHandler(managerMap, m))
 		}
 	}
-	// Look in the list of perf maps
-	for _, perfMap := range m.PerfMaps {
-		if perfMap.DumpHandler != nil && needDump(perfMap.Name) {
-			output.WriteString(perfMap.DumpHandler(perfMap, m))
-		}
-	}
 	return output.String(), nil
 }
 

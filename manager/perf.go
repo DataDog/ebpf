@@ -28,14 +28,6 @@ type PerfMapOptions struct {
 	// LostHandler - Callback function called when one or more events where dropped by the kernel
 	// because the perf ring buffer was full.
 	LostHandler func(CPU int, count uint64, perfMap *PerfMap, manager *Manager)
-
-	// PerfMapStats - Perf map statistics event like nr Read errors, lost samples,
-	// RawSamples bytes count. Need to be initialized via manager.NewPerfMapStats()
-	PerfMapStats *PerfMapStats
-
-	// DumpHandler - Callback function called when manager.Dump() is called
-	// and dump the current state (human readable)
-	DumpHandler func(perfMap *PerfMap, manager *Manager) string
 }
 
 // PerfMap - Perf ring buffer reader wrapper
@@ -46,46 +38,6 @@ type PerfMap struct {
 	// Map - A PerfMap has the same features as a normal Map
 	Map
 	PerfMapOptions
-}
-
-// PerfMapStats contain perf map read/errors statistics
-// including per CPU map bytes and lost bytes
-type PerfMapStats struct {
-	ReadErrors  uint64
-	RawSamples  map[int]uint64
-	LostSamples map[int]uint64
-}
-
-// NewPerfMapStats create/enable counting the perf map statistics performance/debug information
-func NewPerfMapStats() *PerfMapStats {
-	return &PerfMapStats{
-		RawSamples:  make(map[int]uint64),
-		LostSamples: make(map[int]uint64),
-	}
-}
-
-func (new *PerfMapStats) Diff(old *PerfMapStats) (diff *PerfMapStats) {
-	if new == nil || old == nil {
-		return nil
-	}
-	diff = NewPerfMapStats()
-	diff.ReadErrors = new.ReadErrors - old.ReadErrors
-
-	for cpu := range new.RawSamples {
-		rawOld, found := old.RawSamples[cpu]
-		if !found {
-			rawOld = 0
-		}
-		diff.RawSamples[cpu] = new.RawSamples[cpu] - rawOld
-	}
-	for cpu := range new.LostSamples {
-		lostOld, found := old.LostSamples[cpu]
-		if !found {
-			lostOld = 0
-		}
-		diff.LostSamples[cpu] = new.LostSamples[cpu] - lostOld
-	}
-	return diff
 }
 
 // loadNewPerfMap - Creates a new perf map instance, loads it and setup the perf ring buffer reader
@@ -160,25 +112,16 @@ func (m *PerfMap) Start() error {
 					m.manager.wg.Done()
 					return
 				}
-				if m.PerfMapStats != nil {
-					m.PerfMapStats.ReadErrors++
-				}
 				if m.PerfErrChan != nil {
 					m.PerfErrChan <- err
 				}
 				continue
 			}
 			if record.LostSamples > 0 {
-				if m.PerfMapStats != nil {
-					m.PerfMapStats.LostSamples[record.CPU] += record.LostSamples
-				}
 				if m.LostHandler != nil {
 					m.LostHandler(record.CPU, record.LostSamples, m, m.manager)
 				}
 				continue
-			}
-			if m.PerfMapStats != nil {
-				m.PerfMapStats.RawSamples[record.CPU] += uint64(len(record.RawSample))
 			}
 			m.DataHandler(record.CPU, record.RawSample, m, m.manager)
 		}
