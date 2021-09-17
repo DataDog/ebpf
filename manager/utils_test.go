@@ -26,8 +26,8 @@ func TestGenerateEventName(t *testing.T) {
 	}
 
 	UID = "12345678901234567890123456789012345678901234567890"
-	eventName, err = GenerateEventName(probeType, funcName, UID, kprobeAttachPID)
+	_, err = GenerateEventName(probeType, funcName, UID, kprobeAttachPID)
 	if err == nil {
-		t.Error("Test should failed as event name length is too big for the kernel and free space for function Name is < %d", MinFunctionNameLen)
+		t.Errorf("Test should failed as event name length is too big for the kernel and free space for function Name is < %d", MinFunctionNameLen)
 	}
 }
