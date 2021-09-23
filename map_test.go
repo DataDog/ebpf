@@ -394,6 +394,10 @@ func TestMapIterate(t *testing.T) {
 	}
 	defer hash.Close()
 
+	if !supportNullKey.value {
+		t.Log("Running kernel is < 4.4.132: calling map.Iterate() with random start key guessing")
+	}
+
 	if err := hash.Put("hello", uint32(21)); err != nil {
 		t.Fatal(err)
 	}

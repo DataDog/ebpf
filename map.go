@@ -1,9 +1,13 @@
 package ebpf
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/DataDog/ebpf/internal"
 	"github.com/DataDog/ebpf/internal/btf"
@@ -16,6 +20,11 @@ var (
 	ErrKeyExist         = errors.New("key already exists")
 	ErrIterationAborted = errors.New("iteration aborted")
 )
+
+var supportNullKey struct {
+	value bool
+	once  sync.Once
+}
 
 // MapID represents the unique ID of an eBPF map
 type MapID uint32
@@ -84,6 +93,9 @@ type Map struct {
 	abi  MapABI
 	// Per CPU maps return values larger than the size in the spec
 	fullValueSize int
+	// randKey used for kernel < 4.4.132 that didn't support nil key
+	randKey []byte
+	rand    *rand.Rand
 }
 
 // NewMapFromFD creates a map from a raw fd.
@@ -233,11 +245,25 @@ func createMap(spec *MapSpec, inner *internal.FD, handle *btf.Handle) (*Map, err
 
 func newMap(fd *internal.FD, name string, abi *MapABI) (*Map, error) {
 	m := &Map{
-		name,
-		fd,
-		*abi,
-		int(abi.ValueSize),
+		name:          name,
+		fd:            fd,
+		abi:           *abi,
+		fullValueSize: int(abi.ValueSize),
 	}
+
+	supportNullKey.once.Do(func() {
+		v44132, err := internal.NewVersion("4.4.132")
+		if err != nil {
+			return
+		}
+		current := internal.MustKernelVersion()
+		supportNullKey.value = !current.Less(v44132)
+
+		// Initialize the initial random key
+		if !supportNullKey.value {
+			m.randomizeKey()
+		}
+	})
 
 	if !abi.Type.hasPerCPUValue() {
 		return m, nil
@@ -486,10 +512,6 @@ func (m *Map) nextKey(key interface{}, nextKeyOut internal.Pointer) error {
 
 // Iterate traverses a map.
 //
-// WARNING: Will not work on kernel versions < 4.4.132, which don't support using
-// a NULL `key` with the `BPF_MAP_GET_NEXT_KEY` command to the bpf syscall. Please
-// use IterateFrom instead with a non-existing key.
-//
 // It's safe to create multiple iterators at the same time.
 //
 // It's not possible to guarantee that all keys in a map will be
@@ -498,10 +520,22 @@ func (m *Map) Iterate() *MapIterator {
 	return newMapIterator(m, nil)
 }
 
+// randomizeKey() is here for kernel versions < 4.4.132, which don't support using
+// a NULL `key` with the `BPF_MAP_GET_NEXT_KEY` command to the bpf syscall.
+func (m *Map) randomizeKey() []byte {
+	m.randKey = make([]byte, int(m.abi.KeySize))
+	if m.rand == nil {
+		m.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	m.rand.Read(m.randKey)
+	return m.randKey
+}
+
 // IterateFrom traverses a map, starting at prevKey. If prevKey is not found,
 // it will start from the beginning.
 func (m *Map) IterateFrom(prevKey interface{}) *MapIterator {
-	return newMapIterator(m, prevKey)
+	iter := newMapIterator(m, prevKey)
+	return iter
 }
 
 // Close removes a Map
@@ -717,13 +751,32 @@ func (mi *MapIterator) Next(keyOut, valueOut interface{}) bool {
 		return false
 	}
 
+	// gessing a random start key
+	if !supportNullKey.value && mi.prevKey == nil {
+		var bytes1, bytes2, bytes3 []byte
+		bytes1, mi.err = mi.target.NextKeyBytes(mi.target.randKey)
+		if mi.err != nil {
+			return false
+		}
+		mi.prevKey = mi.target.randomizeKey()
+		bytes2, mi.err = mi.target.NextKeyBytes(mi.prevKey)
+		if !bytes.Equal(bytes1, bytes2) {
+			mi.prevKey = mi.target.randomizeKey()
+			bytes3, mi.err = mi.target.NextKeyBytes(mi.prevKey)
+			if !bytes.Equal(bytes1, bytes3) && !bytes.Equal(bytes2, bytes3) {
+				// we didn't found a random key
+				mi.err = fmt.Errorf("%w", ErrIterationAborted)
+				return false
+			}
+		}
+	}
+
 	for ; mi.count < mi.maxEntries; mi.count++ {
 		var nextBytes []byte
 		nextBytes, mi.err = mi.target.NextKeyBytes(mi.prevKey)
 		if mi.err != nil {
 			return false
 		}
-
 		if nextBytes == nil {
 			mi.done = true
 			return false
