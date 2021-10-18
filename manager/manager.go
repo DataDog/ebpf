@@ -825,6 +825,8 @@ func (m *Manager) AddHook(UID string, newProbe Probe) error {
 	}
 
 	// Attach program
+	newProbe.preserveProgram = true
+	defer func() { newProbe.preserveProgram = false }()
 	if err = newProbe.Attach(); err != nil {
 		// clean up
 		_ = newProbe.Stop()

@@ -75,6 +75,10 @@ type Probe struct {
 	attachPID          int
 	attachRetryAttempt uint
 
+	// temporarily set to true when Probe is being created using a cloned eBPF program
+	// this ensures that an attach error doesn't result in the underlying program being closed
+	preserveProgram bool
+
 	// lastError - stores the last error that the probe encountered, it is used to surface a more useful error message
 	// when one of the validators (see Options.ActivatedProbes) fails.
 	lastError error
@@ -509,7 +513,7 @@ func (p *Probe) stop(saveStopError bool) error {
 	err := p.detachRetry()
 
 	// close the loaded program
-	if p.attachRetryAttempt >= p.ProbeRetry {
+	if !p.preserveProgram && p.attachRetryAttempt >= p.ProbeRetry {
 		err = ConcatErrors(err, p.program.Close())
 	}
 
