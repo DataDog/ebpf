@@ -567,6 +567,7 @@ func (m *Manager) Start() error {
 
 	// clean up tracefs
 	if err := m.cleanupTracefs(); err != nil {
+		m.stateLock.Unlock()
 		return errors.Wrap(err, "failed to cleanup tracefs")
 	}
 
