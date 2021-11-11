@@ -1126,7 +1126,7 @@ func (m *Manager) UpdateActivatedProbes(selectors []ProbesSelector) error {
 		}
 	}
 
-	for id, _ := range nextProbes {
+	for id := range nextProbes {
 		if _, alreadyPresent := currentProbes[id]; alreadyPresent {
 			delete(currentProbes, id)
 		} else {
@@ -1524,7 +1524,7 @@ func (m *Manager) cleanupTracefs() error {
 
 	// clean up kprobe_events
 	var cleanUpErrors *multierror.Error
-	pidMask := make(map[int]procMask)
+	pidMask := map[int]procMask{os.Getpid(): Running}
 	cleanUpErrors = multierror.Append(cleanUpErrors, cleanupKprobeEvents(pattern, pidMask))
 	cleanUpErrors = multierror.Append(cleanUpErrors, cleanupUprobeEvents(pattern, pidMask))
 	if cleanUpErrors.Len() == 0 {
