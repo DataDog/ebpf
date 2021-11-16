@@ -40,6 +40,7 @@ var testData = []struct {
 	{true, "4.1.", 262400},
 	{true, "4.1", 262400},
 	{true, "4.19-ovh", 267008},
+	{true, "4.14.252", kernelVersion: 265983},
 }
 
 func TestKernelVersionFromReleaseString(t *testing.T) {

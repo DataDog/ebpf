@@ -51,6 +51,13 @@ func KernelVersionFromReleaseString(releaseString string) (uint32, error) {
 	if len(versionParts) >= 4 {
 		patch, _ = strconv.ParseUint(versionParts[3], 10, 8)
 	}
+
+	// clamp patch/sublevel to 255 EARLY in 4.14.252 because they merged this too early:
+	// https://github.com/torvalds/linux/commit/e131e0e880f942f138c4b5e6af944c7ddcd7ec96
+	if major == 4 && minor == 14 && patch >= 252 {
+		patch = 255
+	}
+
 	out := major*256*256 + minor*256 + patch
 	return uint32(out), nil
 }
