@@ -1,15 +1,100 @@
 package manager
 
+// #include <stdlib.h>
+import "C"
+
 import (
-	"github.com/DataDog/ebpf"
-	"golang.org/x/sys/unix"
+	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 
-	"github.com/pkg/errors"
-
+	"github.com/DataDog/ebpf"
 	"github.com/DataDog/ebpf/internal"
+	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 )
+
+const perfUProbeRefCtrOffsetShift = 32
+
+func parseUintFromFile(path, format string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return -1, err
+	}
+	defer f.Close()
+
+	var ret int
+	_, err = fmt.Fscanf(f, format, &ret)
+	if err != nil {
+		return -1, err
+	}
+
+	return ret, nil
+}
+
+func determineUProbePerfType() int {
+	ret, _ := parseUintFromFile("/sys/bus/event_source/devices/uprobe/type", "%d\n")
+	return ret
+}
+
+func determineKProbePerfType() int {
+	ret, _ := parseUintFromFile("/sys/bus/event_source/devices/kprobe/type", "%d\n")
+	return ret
+}
+
+func determineUProbeRetprobeBit() int {
+	ret, _ := parseUintFromFile("/sys/bus/event_source/devices/uprobe/format/retprobe", "config:%d\n")
+	return ret
+}
+
+func determineKProbeRetprobeBit() int {
+	ret, _ := parseUintFromFile("/sys/bus/event_source/devices/kprobe/format/retprobe", "config:%d\n")
+	return ret
+}
+
+func perfEventOpenProbe(progFd int, uprobe, retprobe bool, name string, offset uint64, pid int, refCtrOff int) (*internal.FD, error) {
+	attr := unix.PerfEventAttr{}
+	if uprobe {
+		attr.Type = uint32(determineUProbePerfType())
+	} else {
+		attr.Type = uint32(determineKProbePerfType())
+	}
+
+	if retprobe {
+		var bit int
+		if uprobe {
+			bit = determineUProbeRetprobeBit()
+		} else {
+			bit = determineKProbeRetprobeBit()
+		}
+		attr.Config |= 1 << uint(bit)
+	}
+	attr.Config |= uint64(refCtrOff) << perfUProbeRefCtrOffsetShift
+	cs := unsafe.Pointer(C.CString(name))
+	defer func() {
+		C.free(cs)
+	}()
+
+	attr.Ext1 = uint64(uintptr(cs))
+	attr.Ext2 = offset
+	attr.Size = uint32(unsafe.Sizeof(attr))
+
+	efd, err := unix.PerfEventOpen(&attr, -1, 0, -1, unix.PERF_FLAG_FD_CLOEXEC)
+	if efd < 0 {
+		return nil, errors.Wrap(err, "perf_event_open error")
+	}
+
+	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(efd), unix.PERF_EVENT_IOC_SET_BPF, uintptr(progFd)); err != 0 {
+		return nil, errors.Wrap(err, "error attaching bpf program to perf event")
+	}
+
+	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(efd), unix.PERF_EVENT_IOC_ENABLE, 0); err != 0 {
+		return nil, errors.Wrap(err, "error enabling perf event")
+	}
+
+	return internal.NewFD(uint32(efd)), nil
+}
 
 func perfEventOpenTracepoint(id int, progFd int) (*internal.FD, error) {
 	attr := unix.PerfEventAttr{
@@ -26,13 +111,14 @@ func perfEventOpenTracepoint(id int, progFd int) (*internal.FD, error) {
 		return nil, errors.Wrap(err, "perf_event_open error")
 	}
 
+	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(efd), unix.PERF_EVENT_IOC_SET_BPF, uintptr(progFd)); err != 0 {
+		return nil, errors.Wrap(err, "error attaching bpf program to perf event")
+	}
+
 	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(efd), unix.PERF_EVENT_IOC_ENABLE, 0); err != 0 {
 		return nil, errors.Wrap(err, "error enabling perf event")
 	}
 
-	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(efd), unix.PERF_EVENT_IOC_SET_BPF, uintptr(progFd)); err != 0 {
-		return nil, errors.Wrap(err, "error attaching bpf program to perf event")
-	}
 	return internal.NewFD(uint32(efd)), nil
 }
 

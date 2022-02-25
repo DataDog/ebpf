@@ -565,19 +565,19 @@ func (p *Probe) attachKprobe() error {
 	p.attachPID = os.Getpid()
 
 	// Write kprobe_events line to register kprobe
-	kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
+	_, err = EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
 	if err == ErrKprobeIDNotExist {
 		// The probe might have been loaded under a kernel generated event name. Clean up just in case.
 		_ = disableKprobeEvent(getKernelGeneratedEventName(probeType, funcName))
 		// fallback without KProbeMaxActive
-		kprobeID, err = EnableKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
+		_, err = EnableKprobeEvent(probeType, funcName, p.UID, "", p.attachPID)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "couldn't enable kprobe %s", p.Section)
 	}
 
 	// Activate perf event
-	p.perfEventFD, err = perfEventOpenTracepoint(kprobeID, p.program.FD())
+	p.perfEventFD, err = perfEventOpenProbe(p.program.FD(), false, probeType == "r", funcName, 0, -1, 0)
 	return errors.Wrapf(err, "couldn't enable kprobe %s", p.GetIdentificationPair())
 }
 
