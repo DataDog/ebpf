@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -366,7 +367,7 @@ func SanitizeUprobeAddresses(f *elf.File, syms []elf.Symbol) {
 		for i, sym := range syms {
 			for _, prog := range f.Progs {
 				if prog.Type == elf.PT_LOAD {
-					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr + prog.Memsz) {
+					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr+prog.Memsz) {
 						syms[i].Value = sym.Value - prog.Vaddr + prog.Off
 					}
 				}
@@ -434,4 +435,41 @@ func GetTracepointID(category, name string) (int, error) {
 		return -1, errors.Wrap(err, "invalid tracepoint id")
 	}
 	return tracepointID, nil
+}
+
+//GetEnv retrieves the environment variable key. If it does not exist it returns the default.
+func GetEnv(key string, dfault string, combineWith ...string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		value = dfault
+	}
+
+	switch len(combineWith) {
+	case 0:
+		return value
+	case 1:
+		return filepath.Join(value, combineWith[0])
+	default:
+		all := make([]string, len(combineWith)+1)
+		all[0] = value
+		copy(all[1:], combineWith)
+		return filepath.Join(all...)
+	}
+}
+
+// HostProc returns joins the provided path with the host /proc directory
+func HostProc(combineWith ...string) string {
+	return GetEnv("HOST_PROC", "/proc", combineWith...)
+}
+
+// Getpid returns the current process ID in the host namespace if $HOST_PROC is defined, the pid in the current namespace
+// otherwise
+func Getpid() int {
+	p, err := os.Readlink(HostProc("/self"))
+	if err == nil {
+		if pid, err := strconv.ParseInt(p, 10, 32); err == nil {
+			return int(pid)
+		}
+	}
+	return os.Getpid()
 }

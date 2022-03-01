@@ -562,7 +562,7 @@ func (p *Probe) attachKprobe() error {
 		// this might actually be a Uprobe
 		return p.attachUprobe()
 	}
-	p.attachPID = os.Getpid()
+	p.attachPID = Getpid()
 
 	// Write kprobe_events line to register kprobe
 	kprobeID, err := EnableKprobeEvent(probeType, funcName, p.UID, maxactiveStr, p.attachPID)
