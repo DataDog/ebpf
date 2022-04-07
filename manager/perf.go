@@ -23,7 +23,7 @@ type PerfMapOptions struct {
 
 	// DataHandler - Callback function called when a new sample was retrieved from the perf
 	// ring buffer.
-	DataHandler func(CPU int, data []byte, perfMap *PerfMap, manager *Manager)
+	DataHandler func(CPU int, data []byte, callback func(), perfMap *PerfMap, manager *Manager)
 
 	// LostHandler - Callback function called when one or more events where dropped by the kernel
 	// because the perf ring buffer was full.
@@ -180,7 +180,7 @@ func (m *PerfMap) Start() error {
 			if m.PerfMapStats != nil {
 				m.PerfMapStats.RawSamples[record.CPU] += uint64(len(record.RawSample))
 			}
-			m.DataHandler(record.CPU, record.RawSample, m, m.manager)
+			m.DataHandler(record.CPU, record.RawSample, record.Reclaim, m, m.manager)
 		}
 	}()
 

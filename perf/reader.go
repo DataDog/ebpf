@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"runtime"
 	"sync"
 
@@ -66,15 +67,21 @@ type Record struct {
 	// The number of samples which could not be output, since
 	// the ring buffer was full.
 	LostSamples uint64
+
+	buffer readBuffer
+}
+
+func (r *Record) Reclaim() {
+	r.buffer.Reclaim()
 }
 
 // NB: Has to be preceded by a call to ring.loadHead.
-func readRecordFromRing(ring *perfEventRing) (Record, error) {
+func readRecordFromRing(ring *perfEventRing, bufferPool *readPool) (Record, error) {
 	defer ring.writeTail()
-	return readRecord(ring, ring.cpu)
+	return readRecord(ring, ring.cpu, bufferPool)
 }
 
-func readRecord(rd io.Reader, cpu int) (Record, error) {
+func readRecord(rd io.Reader, cpu int, bufferPool *readPool) (Record, error) {
 	const (
 		perfRecordLost   = 2
 		perfRecordSample = 9
@@ -92,19 +99,17 @@ func readRecord(rd io.Reader, cpu int) (Record, error) {
 
 	switch header.Type {
 	case perfRecordLost:
-		lost, err := readLostRecords(rd)
-		return Record{CPU: cpu, LostSamples: lost}, err
+		return readLostRecords(rd, cpu)
 
 	case perfRecordSample:
-		sample, err := readRawSample(rd)
-		return Record{CPU: cpu, RawSample: sample}, err
+		return readRawSample(rd, cpu, bufferPool)
 
 	default:
 		return Record{}, &unknownEventError{header.Type}
 	}
 }
 
-func readLostRecords(rd io.Reader) (uint64, error) {
+func readLostRecords(rd io.Reader, cpu int) (Record, error) {
 	// lostHeader must match 'struct perf_event_lost in kernel sources.
 	var lostHeader struct {
 		ID   uint64
@@ -113,24 +118,25 @@ func readLostRecords(rd io.Reader) (uint64, error) {
 
 	err := binary.Read(rd, internal.NativeEndian, &lostHeader)
 	if err != nil {
-		return 0, fmt.Errorf("can't read lost records header: %v", err)
+		return Record{CPU: cpu}, fmt.Errorf("can't read lost records header: %v", err)
 	}
 
-	return lostHeader.Lost, nil
+	return Record{CPU: cpu, LostSamples: lostHeader.Lost}, nil
 }
 
-func readRawSample(rd io.Reader) ([]byte, error) {
+func readRawSample(rd io.Reader, cpu int, bufferPool *readPool) (Record, error) {
 	// This must match 'struct perf_event_sample in kernel sources.
 	var size uint32
 	if err := binary.Read(rd, internal.NativeEndian, &size); err != nil {
-		return nil, fmt.Errorf("can't read sample size: %v", err)
+		return Record{CPU: cpu}, fmt.Errorf("can't read sample size: %v", err)
 	}
 
-	data := make([]byte, int(size))
+	buffer := bufferPool.GetBuffer(int(size))
+	data := buffer.data
 	if _, err := io.ReadFull(rd, data); err != nil {
-		return nil, fmt.Errorf("can't read sample: %v", err)
+		return Record{CPU: cpu}, fmt.Errorf("can't read sample: %v", err)
 	}
-	return data, nil
+	return Record{CPU: cpu, RawSample: data, buffer: buffer}, nil
 }
 
 // Reader allows reading bpf_perf_event_output
@@ -159,6 +165,9 @@ type Reader struct {
 	// Read calls, which would otherwise need to be interrupted.
 	pauseMu  sync.Mutex
 	pauseFds []int
+
+	// pool of reusable buffers to be used when reading data
+	readPool *readPool
 }
 
 // ReaderOptions control the behaviour of the user
@@ -257,6 +266,7 @@ func NewReaderWithOptions(array *ebpf.Map, perCPUBuffer int, opts ReaderOptions)
 		epollRings:  make([]*perfEventRing, 0, len(rings)),
 		closeFd:     closeFd,
 		pauseFds:    pauseFds,
+		readPool:    newReadPool(os.Getpagesize()),
 	}
 	if err = pr.Resume(); err != nil {
 		return nil, err
@@ -359,7 +369,7 @@ func (pr *Reader) Read() (Record, error) {
 		// Start at the last available event. The order in which we
 		// process them doesn't matter, and starting at the back allows
 		// resizing epollRings to keep track of processed rings.
-		record, err := readRecordFromRing(pr.epollRings[len(pr.epollRings)-1])
+		record, err := readRecordFromRing(pr.epollRings[len(pr.epollRings)-1], pr.readPool)
 		if err == errEOR {
 			// We've emptied the current ring buffer, process
 			// the next one.
