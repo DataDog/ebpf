@@ -69,12 +69,12 @@ type Record struct {
 }
 
 // NB: Has to be preceded by a call to ring.loadHead.
-func readRecordFromRing(ring *perfEventRing) (Record, error) {
+func (pr *Reader) readRecordFromRing(ring *perfEventRing) (Record, error) {
 	defer ring.writeTail()
-	return readRecord(ring, ring.cpu)
+	return pr.readRecord(ring, ring.cpu)
 }
 
-func readRecord(rd io.Reader, cpu int) (Record, error) {
+func (pr *Reader) readRecord(rd io.Reader, cpu int) (Record, error) {
 	const (
 		perfRecordLost   = 2
 		perfRecordSample = 9
@@ -96,7 +96,7 @@ func readRecord(rd io.Reader, cpu int) (Record, error) {
 		return Record{CPU: cpu, LostSamples: lost}, err
 
 	case perfRecordSample:
-		sample, err := readRawSample(rd)
+		sample, err := pr.readRawSample(rd)
 		return Record{CPU: cpu, RawSample: sample}, err
 
 	default:
@@ -119,19 +119,25 @@ func readLostRecords(rd io.Reader) (uint64, error) {
 	return lostHeader.Lost, nil
 }
 
-func readRawSample(rd io.Reader) ([]byte, error) {
+func (pr *Reader) readRawSample(rd io.Reader) ([]byte, error) {
 	// This must match 'struct perf_event_sample in kernel sources.
 	var size uint32
 	if err := binary.Read(rd, internal.NativeEndian, &size); err != nil {
 		return nil, fmt.Errorf("can't read sample size: %v", err)
 	}
 
-	data := make([]byte, int(size))
+	data, err := pr.sampleAllocator(int(size))
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate sample space: %w", err)
+	}
+
 	if _, err := io.ReadFull(rd, data); err != nil {
 		return nil, fmt.Errorf("can't read sample: %v", err)
 	}
 	return data, nil
 }
+
+type SampleAllocator func(int) ([]byte, error)
 
 // Reader allows reading bpf_perf_event_output
 // from user space.
@@ -159,6 +165,8 @@ type Reader struct {
 	// Read calls, which would otherwise need to be interrupted.
 	pauseMu  sync.Mutex
 	pauseFds []int
+
+	sampleAllocator SampleAllocator
 }
 
 // ReaderOptions control the behaviour of the user
@@ -168,6 +176,9 @@ type ReaderOptions struct {
 	// Read will process data. Must be smaller than PerCPUBuffer.
 	// The default is to start processing as soon as data is available.
 	Watermark int
+
+	// Allocator
+	SampleAllocator SampleAllocator
 }
 
 // NewReader creates a new reader with default options.
@@ -248,15 +259,22 @@ func NewReaderWithOptions(array *ebpf.Map, perCPUBuffer int, opts ReaderOptions)
 		return nil, err
 	}
 
+	if opts.SampleAllocator == nil {
+		opts.SampleAllocator = func(size int) ([]byte, error) {
+			return make([]byte, size), nil
+		}
+	}
+
 	pr = &Reader{
 		array:   array,
 		rings:   rings,
 		epollFd: epollFd,
 		// Allocate extra event for closeFd
-		epollEvents: make([]unix.EpollEvent, len(rings)+1),
-		epollRings:  make([]*perfEventRing, 0, len(rings)),
-		closeFd:     closeFd,
-		pauseFds:    pauseFds,
+		epollEvents:     make([]unix.EpollEvent, len(rings)+1),
+		epollRings:      make([]*perfEventRing, 0, len(rings)),
+		closeFd:         closeFd,
+		pauseFds:        pauseFds,
+		sampleAllocator: opts.SampleAllocator,
 	}
 	if err = pr.Resume(); err != nil {
 		return nil, err
@@ -359,7 +377,7 @@ func (pr *Reader) Read() (Record, error) {
 		// Start at the last available event. The order in which we
 		// process them doesn't matter, and starting at the back allows
 		// resizing epollRings to keep track of processed rings.
-		record, err := readRecordFromRing(pr.epollRings[len(pr.epollRings)-1])
+		record, err := pr.readRecordFromRing(pr.epollRings[len(pr.epollRings)-1])
 		if err == errEOR {
 			// We've emptied the current ring buffer, process
 			// the next one.

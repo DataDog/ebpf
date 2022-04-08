@@ -36,6 +36,9 @@ type PerfMapOptions struct {
 	// DumpHandler - Callback function called when manager.Dump() is called
 	// and dump the current state (human readable)
 	DumpHandler func(perfMap *PerfMap, manager *Manager) string
+
+	// SampleAllocator
+	SampleAllocator perf.SampleAllocator
 }
 
 // PerfMap - Perf ring buffer reader wrapper
@@ -142,7 +145,8 @@ func (m *PerfMap) Start() error {
 	// Create and start the perf map
 	var err error
 	opt := perf.ReaderOptions{
-		Watermark: m.Watermark,
+		Watermark:       m.Watermark,
+		SampleAllocator: m.SampleAllocator,
 	}
 	if m.perfReader, err = perf.NewReaderWithOptions(m.array, m.PerfRingBufferSize, opt); err != nil {
 		return err
