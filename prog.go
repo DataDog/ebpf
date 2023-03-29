@@ -352,6 +352,7 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, er
 	}
 
 	truncated := errors.Is(err, unix.ENOSPC) || errors.Is(err2, unix.ENOSPC)
+	fmt.Printf("%v", spec.Instructions)
 	return nil, internal.ErrorWithLog("load program", err, logBuf, truncated)
 }
 

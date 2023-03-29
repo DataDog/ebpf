@@ -101,6 +101,7 @@ func applyRelocations(insns asm.Instructions, target *btf.Spec, bo binary.ByteOr
 	}
 
 	for i, fixup := range fixups {
+		fmt.Printf("%s: %v: %s\n", fixup.String(), reloInsns[i], reloInsns[i].Source())
 		if err := fixup.Apply(reloInsns[i]); err != nil {
 			return fmt.Errorf("apply fixup %s: %w", &fixup, err)
 		}

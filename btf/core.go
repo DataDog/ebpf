@@ -290,6 +290,7 @@ func coreCalculateFixups(relos []*CORERelocation, targetSpec *Spec, targets []Ty
 			if relo.kind.checksForExistence() {
 				bestFixups[i] = COREFixup{kind: relo.kind, local: 1, target: 0}
 			} else {
+				fmt.Printf("default poison, relo: %+v\n", relo)
 				bestFixups[i] = COREFixup{kind: relo.kind, poison: true}
 			}
 		}
@@ -325,6 +326,7 @@ func coreCalculateFixup(relo *CORERelocation, target Type, targetID TypeID, bo b
 
 		err := coreAreTypesCompatible(local, target)
 		if errors.Is(err, errImpossibleRelocation) {
+			fmt.Printf("relo impossible target/size/exists: %s vs %s\n", local, target)
 			return poison()
 		}
 		if err != nil {
@@ -355,6 +357,7 @@ func coreCalculateFixup(relo *CORERelocation, target Type, targetID TypeID, bo b
 	case reloEnumvalValue, reloEnumvalExists:
 		localValue, targetValue, err := coreFindEnumValue(local, relo.accessor, target)
 		if errors.Is(err, errImpossibleRelocation) {
+			fmt.Printf("relo impossible enum: %s vs %s, accessor: %s\n", local, target, relo.accessor)
 			return poison()
 		}
 		if err != nil {
@@ -387,11 +390,13 @@ func coreCalculateFixup(relo *CORERelocation, target Type, targetID TypeID, bo b
 			// We can't relocate fields using a forward declaration, so
 			// skip it. If a non-forward declaration is present in the BTF
 			// we'll find it in one of the other iterations.
+			fmt.Printf("relo impossible fwd decl: %s vs %s\n", local, target)
 			return poison()
 		}
 
 		localField, targetField, err := coreFindField(local, relo.accessor, target)
 		if errors.Is(err, errImpossibleRelocation) {
+			fmt.Printf("relo impossible find field: %s vs %s accessor: %s: %s\n", local, target, relo.accessor, err)
 			return poison()
 		}
 		if err != nil {
@@ -952,7 +957,7 @@ func coreAreMembersCompatible(localType Type, targetType Type) error {
 	}
 
 	if reflect.TypeOf(localType) != reflect.TypeOf(targetType) {
-		return fmt.Errorf("type mismatch: %w", errImpossibleRelocation)
+		return fmt.Errorf("type mismatch (%s vs %s): %w", localType, targetType, errImpossibleRelocation)
 	}
 
 	switch lv := localType.(type) {
