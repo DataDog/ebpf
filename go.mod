@@ -8,7 +8,7 @@ require (
 	github.com/florianl/go-tc v0.2.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.6.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/vishvananda/netlink v1.1.0
-	golang.org/x/sys v0.0.0-20200320181252-af34d8274f85
+	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
 )
